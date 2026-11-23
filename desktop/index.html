@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="purple">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Desk Hub</title>
+</head>
+<body class="settingswin">
+  <div class="ov" id="ov">
+    <div class="swh" data-tauri-drag-region>
+      <span class="swt" data-tauri-drag-region><span class="dot" id="dot" title="Board link"></span>Desk Hub</span>
+      <span class="sub swnote" data-tauri-drag-region>Changes apply right away</span>
+      <button type="button" class="ib" id="minBtn" title="Minimize"><span data-icon="minus"></span></button>
+      <button type="button" class="ib" id="closeBtn" title="Close to tray"><span data-icon="x"></span></button>
+    </div>
+    <div class="swb">
+      <nav class="swnav" id="nav"></nav>
+      <main class="swmain" id="main"></main>
+    </div>
+    <span class="grip" id="grip" title="Resize"></span>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

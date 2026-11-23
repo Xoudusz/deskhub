@@ -8,6 +8,7 @@
 
 #include "board.h"
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "display.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
@@ -537,7 +538,10 @@ static void on_text(int fd, char *text)
             s_client = fd;
             s_last_rx_ms = now_ms();
             ESP_LOGI(TAG, "companion connected (fd %d)", fd);
-            hub_server_send("{\"type\":\"hello_ok\",\"version\":\"0.1.0\"}");
+            char ok[96];
+            snprintf(ok, sizeof(ok), "{\"type\":\"hello_ok\",\"version\":\"%s\"}",
+                     esp_app_get_description()->version);
+            hub_server_send(ok);
         } else {
             ESP_LOGW(TAG, "wrong token from fd %d", fd);
             httpd_sess_trigger_close(s_server, fd);
@@ -638,9 +642,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
 
 static esp_err_t root_handler(httpd_req_t *req)
 {
+    char text[96];
+    snprintf(text, sizeof(text), "Desk Hub %s: %s\n", esp_app_get_description()->version,
+             hub_server_pc_online() ? "companion online" : "waiting for companion");
     httpd_resp_set_type(req, "text/plain");
-    return httpd_resp_sendstr(req, hub_server_pc_online() ? "Desk Hub: companion online\n"
-                                                         : "Desk Hub: waiting for companion\n");
+    return httpd_resp_sendstr(req, text);
 }
 
 // ---- debug endpoints: /screenshot and /tap, both need ?token= --------------

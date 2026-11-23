@@ -28,6 +28,9 @@ if [[ -f sdkconfig.local ]]; then
 fi
 
 build="build/$variant"
+# Firmware version shown by the board and the desktop app: git describe of this
+# checkout, computed here because the container has no access to .git.
+version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 # Start each build from the defaults files, so edits to sdkconfig.local (or the
 # defaults) always take effect. The old sdkconfig is removed inside the
 # container because the container owns the build directory.
@@ -35,8 +38,8 @@ docker run --rm \
     -v "$PWD":/project -w /project \
     -e IDF_TARGET="$target" -e HOME=/tmp \
     "$IDF_IMAGE" \
-    bash -c 'rm -f "$1/sdkconfig" && idf.py -B "$1" -D SDKCONFIG="$1/sdkconfig" -D SDKCONFIG_DEFAULTS="$2" build merge-bin -o deskhub-merged.bin' \
-        _ "$build" "$defaults"
+    bash -c 'rm -f "$1/sdkconfig" && idf.py -B "$1" -D SDKCONFIG="$1/sdkconfig" -D SDKCONFIG_DEFAULTS="$2" -D PROJECT_VER="$3" build merge-bin -o deskhub-merged.bin' \
+        _ "$build" "$defaults" "$version"
 
 mkdir -p "out/$variant"
 cp "$build/deskhub.bin" "$build/deskhub-merged.bin" "out/$variant/"

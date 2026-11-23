@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "src-tauri",
+]
+
+[profile.release]
+lto = "thin"
+opt-level = "s"
+strip = true
+panic = "abort"
