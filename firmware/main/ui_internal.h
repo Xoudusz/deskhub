@@ -163,6 +163,8 @@ void games_tick(void);
 int games_session_s(void);                          // live seconds into the current session
 const lv_image_dsc_t *games_thumb(uint32_t *appid); // Home thumbnail, NULL if none
 void games_launch(uint32_t appid);
+void games_placeholder_init(lv_obj_t *ph, const lv_font_t *font);  // name-coloured initials tile
+void games_placeholder_set(lv_obj_t *ph, const char *name);
 void ui_fmt_playtime(char *buf, size_t n, int minutes);  // "312 h" / "45 min"
 void home_refresh_game(void);
 void games_fmt_ago(char *buf, size_t n, time_t t);    // "Yesterday", "3 days ago"

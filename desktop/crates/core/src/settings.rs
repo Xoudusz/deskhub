@@ -325,13 +325,19 @@ pub enum NightStyle {
     #[default]
     Off,
     Clock,
+    /// Stay on with the normal pages, only dimmed to the night brightness.
+    Dim,
 }
+
+/// Night brightness used for "dim" when none is set.
+pub const DIM_DEFAULT: i64 = 20;
 
 impl NightStyle {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Off => "off",
             Self::Clock => "clock",
+            Self::Dim => "dim",
         }
     }
 
@@ -340,6 +346,7 @@ impl NightStyle {
         match s.trim().to_lowercase().as_str() {
             "off" => Some(Self::Off),
             "clock" => Some(Self::Clock),
+            "dim" => Some(Self::Dim),
             _ => None,
         }
     }

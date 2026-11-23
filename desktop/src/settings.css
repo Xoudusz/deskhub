@@ -102,3 +102,8 @@ body.settingswin input[type=range]::-webkit-slider-thumb { -webkit-appearance: n
 .tile.add { align-items: center; justify-content: center; flex-direction: row; background: transparent; border-style: dashed; border-color: var(--line2); color: var(--muted); }
 input.color { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line2); border-radius: 6px; background: none; cursor: pointer; }
 .gedit { margin: 0 12px 8px; border-left: 2px solid rgba(var(--acc-rgb), .5); }
+
+/* Status: the last board picture while offline. */
+.prev.offline { position: relative; }
+.prev.offline img.stale { display: block; width: 100%; opacity: .45; filter: grayscale(.6); }
+.prev.offline span { position: absolute; inset: auto 0 10px 0; text-align: center; font-size: .75rem; color: var(--muted); }

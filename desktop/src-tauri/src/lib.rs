@@ -155,6 +155,36 @@ async fn board_screenshot(state: tauri::State<'_, App>) -> Result<String, String
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Install a firmware image on the board: `path` or a file picker. The board asks first.
+#[tauri::command]
+async fn board_firmware(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, App>,
+    path: Option<String>,
+) -> Result<String, String> {
+    let path = match path {
+        Some(p) => PathBuf::from(p),
+        None => {
+            use tauri_plugin_dialog::DialogExt;
+            let picked = app
+                .dialog()
+                .file()
+                .set_title("Firmware image (deskhub.bin)")
+                .add_filter("Firmware", &["bin"])
+                .blocking_pick_file();
+            match picked.and_then(|f| f.into_path().ok()) {
+                Some(p) => p,
+                None => return Err("No file chosen".into()),
+            }
+        }
+    };
+    let image = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let s = state.settings();
+    http::firmware(&s.board.host, &s.board.token, image)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn board_tap(state: tauri::State<'_, App>, x: i64, y: i64) -> Result<(), String> {
     let s = state.settings();
@@ -390,6 +420,7 @@ pub fn run() {
             get_status,
             board_screenshot,
             board_tap,
+            board_firmware,
             import_config,
             claude_status,
             claude_connect

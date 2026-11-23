@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use log::warn;
 use serde_json::{json, Value};
 
-use crate::settings::{GridItem, Settings};
+use crate::settings::{GridItem, NightStyle, Settings, DIM_DEFAULT};
 
 /// Every page the board knows, pages.py ALL_PAGES.
 pub const ALL_PAGES: &[&str] = &[
@@ -195,9 +195,18 @@ pub fn layout_message(s: &Settings) -> Value {
         "pc_sleep": s.display.pc_sleep.as_str(),
         "night_start": night_start,
         "night_end": night_end,
-        "night_style": s.display.night_style.as_str(),
+        // The board dims instead of going dark when the style is "off" with a night
+        // brightness above 0 (display.c dark_mode): that is what "dim" sends.
+        "night_style": match s.display.night_style {
+            NightStyle::Dim => "off",
+            other => other.as_str(),
+        },
         "brightness": s.display.brightness.clamp(1, 100),
-        "night_brightness": s.display.night_brightness.clamp(0, 100),
+        "night_brightness": match s.display.night_style {
+            NightStyle::Dim if s.display.night_brightness <= 0 => DIM_DEFAULT,
+            NightStyle::Dim => s.display.night_brightness.clamp(1, 100),
+            _ => s.display.night_brightness.clamp(0, 100),
+        },
         "seconds": s.display.clock_seconds,
     })
 }
@@ -485,5 +494,16 @@ mod tests {
         let mut s = Settings::default();
         s.display.clock_seconds = true;
         assert_eq!(layout_message(&s)["seconds"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn dim_night_style_keeps_pages_on() {
+        let mut s = Settings::default();
+        s.display.night_style = NightStyle::Dim;
+        let v = layout_message(&s);
+        assert_eq!(v["night_style"], "off");
+        assert_eq!(v["night_brightness"], DIM_DEFAULT);
+        s.display.night_brightness = 35;
+        assert_eq!(layout_message(&s)["night_brightness"], 35);
     }
 }

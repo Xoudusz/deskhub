@@ -35,7 +35,7 @@ type Settings = {
     brightness: number;          // 1-100, default 100
     night_brightness: number;    // 0-100, default 0 (0 = night style as before)
     night: string;               // "" (off) or "HH:MM-HH:MM"
-    night_style: "off" | "clock";
+    night_style: "off" | "clock" | "dim";
     pc_sleep: "off" | "clock" | "none";
     clock_seconds: boolean;      // Home clock shows seconds (layout key "seconds")
   };

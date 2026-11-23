@@ -133,6 +133,8 @@ pub struct Game {
     pub launch: String,
     /// Presets: "lol" / "tft" share one program.
     pub mode: String,
+    /// World of Warcraft: each client flavour found running becomes its own game.
+    pub flavours: bool,
 }
 
 /// An entry before normalising: a user game or a preset.
@@ -145,6 +147,7 @@ pub struct Raw {
     pub image: String,
     pub launch: String,
     pub mode: String,
+    pub flavours: bool,
 }
 
 impl From<&CustomGame> for Raw {
@@ -157,6 +160,7 @@ impl From<&CustomGame> for Raw {
             image: g.image.clone(),
             launch: g.launch.clone(),
             mode: String::new(),
+            flavours: false,
         }
     }
 }
@@ -229,7 +233,16 @@ fn presets() -> Vec<Preset> {
         },
         Preset {
             launch: "battlenet://WoW",
-            ..p("World of Warcraft", &["wow.exe", "wowclassic.exe"])
+            ..p(
+                "World of Warcraft",
+                &[
+                    "wow.exe",
+                    "wowclassic.exe",
+                    "wowt.exe",
+                    "wowb.exe",
+                    "wowclassict.exe",
+                ],
+            )
         },
         Preset {
             steam_appid: 2_344_520,
@@ -321,6 +334,7 @@ pub fn preset_entries(
                 resolve(pr.launch)
             },
             mode: pr.mode.to_string(),
+            flavours: pr.name == WOW,
         });
     }
     out
@@ -357,9 +371,42 @@ pub fn load_games(cfg: &Games, resolve: &dyn Fn(&str) -> String) -> Vec<Game> {
             image: g.image.trim().to_string(),
             launch: g.launch.trim().to_string(),
             mode: g.mode,
+            flavours: g.flavours,
         });
     }
     games
+}
+
+const WOW: &str = "World of Warcraft";
+
+/// Name of the WoW client flavour from its install folder (`_retail_`, `_classic_`, ...).
+pub fn wow_flavour_name(exe: &str) -> String {
+    let lower = exe.to_lowercase();
+    let folder = lower
+        .rsplit(['/', '\\'])
+        .find(|c| c.len() > 2 && c.starts_with('_') && c.ends_with('_'))
+        .map(|c| &c[1..c.len() - 1]);
+    match folder {
+        None | Some("retail") => WOW.into(),
+        Some("classic") => "WoW Classic".into(),
+        Some("classic_era") => "WoW Classic Era".into(),
+        Some("anniversary") => "WoW Anniversary".into(),
+        Some("ptr") => "WoW PTR".into(),
+        Some("beta") => "WoW Beta".into(),
+        Some(other) => {
+            let words: Vec<String> = other
+                .split('_')
+                .filter(|w| !w.is_empty())
+                .map(|w| {
+                    let mut c = w.chars();
+                    c.next()
+                        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                        .unwrap_or_default()
+                })
+                .collect();
+            format!("WoW {}", words.join(" "))
+        }
+    }
 }
 
 // ---- detection ---------------------------------------------------------------
@@ -370,6 +417,8 @@ pub struct ProcInfo {
     pub name: String,
     /// Lower-case command line.
     pub cmdline: String,
+    /// Lower-case path of the executable (empty when unknown).
+    pub exe: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -417,12 +466,16 @@ pub struct Tracker {
     saved_at: f64,
     league: (String, f64),
     state_file: Option<PathBuf>,
+    /// Games added by flavour detection: id -> (name, base game name). Kept in the state
+    /// file so they come back after a restart.
+    flav: HashMap<u32, (String, String)>,
 }
 
 impl Tracker {
     pub fn new(games: Vec<Game>, state_file: Option<PathBuf>) -> Self {
         let state = state_file.as_deref().map(load_state).unwrap_or_default();
-        Self {
+        let flav = state_file.as_deref().map(load_flavours).unwrap_or_default();
+        let mut t = Self {
             games,
             state,
             running: 0,
@@ -430,7 +483,34 @@ impl Tracker {
             saved_at: 0.0,
             league: ("lol".into(), -1e9),
             state_file,
+            flav,
+        };
+        t.restore_flavours();
+        t
+    }
+
+    /// Recreate the saved flavour games whose base game is active.
+    fn restore_flavours(&mut self) {
+        let mut add = Vec::new();
+        for (id, (name, base)) in &self.flav {
+            if self.games.iter().any(|g| g.id == *id) {
+                continue;
+            }
+            let b = base.to_lowercase();
+            if let Some(g) = self
+                .games
+                .iter()
+                .find(|g| g.flavours && g.name.to_lowercase() == b)
+            {
+                let mut f = g.clone();
+                f.id = *id;
+                f.name = name.clone();
+                f.flavours = false;
+                add.push(f);
+            }
         }
+        add.sort_by_key(|g| g.id);
+        self.games.extend(add);
     }
 
     pub fn games(&self) -> &[Game] {
@@ -440,11 +520,12 @@ impl Tracker {
     /// Swap in a new game list (settings changed), keeping the history. A running game
     /// that is gone is stopped.
     pub fn set_games(&mut self, games: Vec<Game>, now: f64) {
-        if self.running != 0 && !games.iter().any(|g| g.id == self.running) {
+        self.games = games;
+        self.restore_flavours();
+        if self.running != 0 && !self.games.iter().any(|g| g.id == self.running) {
             self.stop(now);
             self.running = 0;
         }
-        self.games = games;
     }
 
     pub fn game(&self, id: u32) -> Option<&Game> {
@@ -491,6 +572,33 @@ impl Tracker {
             }
         }
         None
+    }
+
+    /// For a WoW game, the entry of the client flavour that runs (added on first sight).
+    /// A game with the flavour's exact name, user-made or not, is used as is.
+    pub fn find_flavour(&mut self, probe: &Probe, idx: usize) -> usize {
+        let g = &self.games[idx];
+        if !g.flavours {
+            return idx;
+        }
+        let Some(pr) = probe.procs.iter().find(|pr| {
+            g.process.contains(&pr.name)
+                && (g.match_text.is_empty() || pr.cmdline.contains(&g.match_text))
+        }) else {
+            return idx;
+        };
+        let name = wow_flavour_name(&pr.exe);
+        let id = game_id(&name);
+        if let Some(i) = self.games.iter().position(|o| o.id == id) {
+            return i;
+        }
+        let mut flavour = g.clone();
+        flavour.id = id;
+        flavour.name = name;
+        flavour.flavours = false;
+        self.flav.insert(id, (flavour.name.clone(), g.name.clone()));
+        self.games.push(flavour);
+        self.games.len() - 1
     }
 
     /// True when game `idx` needs the League mode and the last answer is stale.
@@ -580,10 +688,12 @@ impl Tracker {
             .state
             .iter()
             .map(|(k, v)| {
-                (
-                    k.to_string(),
-                    serde_json::json!({ "last": v.last, "total_s": v.total_s }),
-                )
+                let mut e = serde_json::json!({ "last": v.last, "total_s": v.total_s });
+                if let Some((name, base)) = self.flav.get(k) {
+                    e["name"] = name.as_str().into();
+                    e["base"] = base.as_str().into();
+                }
+                (k.to_string(), e)
             })
             .collect();
         if let Some(dir) = path.parent() {
@@ -635,6 +745,28 @@ pub fn load_state(path: &Path) -> HashMap<u32, Stat> {
                 total_s: num("total_s"),
             },
         );
+    }
+    out
+}
+
+/// Flavour games saved in the history file (`name` and `base` keys): id -> (name, base).
+pub fn load_flavours(path: &Path) -> HashMap<u32, (String, String)> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&text) else {
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    for (k, v) in map {
+        let (Ok(id), Some(name), Some(base)) = (
+            k.parse::<u32>(),
+            v.get("name").and_then(Value::as_str),
+            v.get("base").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        out.insert(id, (name.to_string(), base.to_string()));
     }
     out
 }
@@ -806,6 +938,7 @@ mod tests {
             image: String::new(),
             launch: String::new(),
             mode: mode.into(),
+            flavours: false,
         }
     }
 
@@ -813,7 +946,67 @@ mod tests {
         ProcInfo {
             name: name.into(),
             cmdline: cmd.into(),
+            exe: String::new(),
         }
+    }
+
+    #[test]
+    fn wow_flavour_names() {
+        let n = |p: &str| wow_flavour_name(p);
+        let base = "C:\\Program Files (x86)\\World of Warcraft\\";
+        assert_eq!(n(&format!("{base}_retail_\\Wow.exe")), "World of Warcraft");
+        assert_eq!(
+            n(&format!("{base}_classic_\\WowClassic.exe")),
+            "WoW Classic"
+        );
+        assert_eq!(
+            n(&format!("{base}_classic_era_\\WowClassic.exe")),
+            "WoW Classic Era"
+        );
+        assert_eq!(
+            n(&format!("{base}_anniversary_\\Wow.exe")),
+            "WoW Anniversary"
+        );
+        assert_eq!(n(&format!("{base}_ptr_\\WowT.exe")), "WoW PTR");
+        assert_eq!(n(&format!("{base}_beta_\\WowB.exe")), "WoW Beta");
+        assert_eq!(n(&format!("{base}_forever_\\Wow.exe")), "WoW Forever");
+        assert_eq!(n("/g/wow/_my_new_flavour_/wow.exe"), "WoW My New Flavour");
+        assert_eq!(n(&format!("{base}Wow.exe")), "World of Warcraft");
+        assert_eq!(n(""), "World of Warcraft");
+    }
+
+    #[test]
+    fn wow_flavours_are_separate_games() {
+        let mut base = game("World of Warcraft", &["wow.exe"], "", "", "");
+        base.id = game_id("World of Warcraft");
+        base.flavours = true;
+        let mut t = tracker(vec![base]);
+        let wow = |exe: &str| Probe {
+            procs: vec![ProcInfo {
+                name: "wow.exe".into(),
+                cmdline: String::new(),
+                exe: exe.into(),
+            }],
+            ..Probe::default()
+        };
+        let p1 = wow("c:\\wow\\_retail_\\wow.exe");
+        let i = t.find(&p1).unwrap();
+        let i = t.find_flavour(&p1, i);
+        assert_eq!(t.games()[i].name, "World of Warcraft");
+        let p2 = wow("c:\\wow\\_forever_\\wow.exe");
+        let i = t.find(&p2).unwrap();
+        let i = t.find_flavour(&p2, i);
+        assert_eq!(t.games()[i].name, "WoW Forever");
+        assert_eq!(t.games().len(), 2);
+        assert_ne!(t.games()[0].id, t.games()[1].id);
+        // Seen again: no duplicate.
+        let i = t.find(&p2).unwrap();
+        t.find_flavour(&p2, i);
+        assert_eq!(t.games().len(), 2);
+        // Settings reload keeps the flavour game.
+        let keep = vec![t.games()[0].clone()];
+        t.set_games(keep, 0.0);
+        assert_eq!(t.games().len(), 2);
     }
 
     #[test]
@@ -955,5 +1148,41 @@ mod tests {
         std::fs::write(&file, "not json").unwrap();
         assert!(load_state(&file).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn flavour_games_survive_restart() {
+        let dir = std::env::temp_dir().join(format!("deskhub-flav-{}", std::process::id()));
+        let file = dir.join("state.json");
+        let mk = || {
+            let mut base = game("World of Warcraft", &["wow.exe"], "", "", "");
+            base.flavours = true;
+            base
+        };
+        let mut t = Tracker::new(vec![mk()], Some(file.clone()));
+        let probe = Probe {
+            procs: vec![ProcInfo {
+                name: "wow.exe".into(),
+                cmdline: String::new(),
+                exe: "c:\\wow\\_forever_\\wow.exe".into(),
+            }],
+            ..Probe::default()
+        };
+        let i = t.find(&probe).unwrap();
+        let i = t.find_flavour(&probe, i);
+        t.apply(1000.0, Some(i));
+        t.finish(1120.0);
+        // Restart: same settings, WoW not running.
+        let t2 = Tracker::new(vec![mk()], Some(file.clone()));
+        assert_eq!(t2.games().len(), 2);
+        let r = t2.recent();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].name, "WoW Forever");
+        assert_eq!(r[0].last, 1120);
+        assert_eq!(r[0].total_min, 2);
+        // Base preset off: flavour is not recreated.
+        let t3 = Tracker::new(vec![], Some(file));
+        assert!(t3.games().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

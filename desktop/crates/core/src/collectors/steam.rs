@@ -654,7 +654,9 @@ fn collect_probe(sys: &mut System, tracker: &Tracker) -> Probe {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_cmd(UpdateKind::OnlyIfNotSet),
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::OnlyIfNotSet)
+            .with_exe(UpdateKind::OnlyIfNotSet),
     );
     let wanted = tracker.wanted_procs();
     let want_league = tracker.wants_league();
@@ -677,7 +679,13 @@ fn collect_probe(sys: &mut System, tracker: &Tracker) -> Probe {
                 .collect::<Vec<_>>()
                 .join(" ")
                 .to_lowercase();
-            probe.procs.push(ProcInfo { name, cmdline });
+            let exe = p
+                .exe()
+                .map(|e| e.to_string_lossy().into_owned())
+                .or_else(|| p.cmd().first().map(|a| a.to_string_lossy().into_owned()))
+                .unwrap_or_default()
+                .to_lowercase();
+            probe.procs.push(ProcInfo { name, cmdline, exe });
         }
     }
     if tracker.wants_titles() {
@@ -775,6 +783,9 @@ impl Core {
         self.running = running;
         let probe = collect_probe(&mut self.sys, &self.tracker);
         self.found = self.tracker.find(&probe);
+        if let Some(i) = self.found {
+            self.found = Some(self.tracker.find_flavour(&probe, i));
+        }
         self.league = probe.league;
         self.found.is_some_and(|i| self.tracker.mode_wanted(i, now))
     }

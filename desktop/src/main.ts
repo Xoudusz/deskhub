@@ -28,7 +28,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["about", "info", "About"],
 ];
 const THEMES: [string, string][] = [
-  ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["midnight", "Midnight"], ["teal", "Teal"], ["rose", "Rose"],
+  ["midnight", "Midnight (default)"], ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["teal", "Teal"], ["rose", "Rose"],
 ];
 const STATE_TEXT: Record<Status["state"], string> = { connected: "Connected", searching: "Searching", refused: "Refused", stopped: "Stopped" };
 const DOT: Record<Status["state"], string> = { connected: "good", searching: "warn", refused: "bad", stopped: "" };
@@ -128,12 +128,20 @@ function saveLater(key: string, patch: SettingsPatch) {
 }
 
 // ---- live preview ----
+// The last board picture: shown at once when Status opens (and while offline) instead
+// of an empty box until the next screenshot arrives.
+let lastShot = (() => { try { return localStorage.getItem("lastShot") ?? ""; } catch { return ""; } })();
+
 function refreshShot() {
   const img = document.getElementById("shot") as HTMLImageElement | null;
   if (!img || shotBusy || section !== "status" || st.state !== "connected" || document.visibilityState !== "visible") return;
   shotBusy = true;
   api.boardScreenshot()
-    .then(url => { img.src = url; })
+    .then(url => {
+      img.src = url;
+      lastShot = url;
+      try { localStorage.setItem("lastShot", url); } catch { /* full: keep it in memory only */ }
+    })
     .catch(() => undefined)
     .finally(() => { shotBusy = false; });
 }
@@ -177,8 +185,10 @@ function statusHtml(): string {
     row("Connected since", st.since ? esc(new Date(st.since * 1000).toLocaleString()) : "Not yet"),
   ].join(""));
   const body = on
-    ? `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"></div>`
-    : `<div class="prev offline">Board offline</div>`;
+    ? `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"${lastShot ? ` src="${lastShot}"` : ""}></div>`
+    : lastShot
+      ? `<div class="prev offline"><img class="stale" src="${lastShot}" alt="Last board screen" draggable="false"><span>Board offline: last picture</span></div>`
+      : `<div class="prev offline">Board offline</div>`;
   return board + card("Live preview", "Tap the picture to press the board", `<div class="swr swsl">${body}</div>`);
 }
 
@@ -196,8 +206,11 @@ function displayHtml(): string {
           row("Until", `<input type="time" data-k="nightTo" value="${esc(to)}">`),
         ]
       : []),
-    row("Night style", select(`data-k="nightStyle"`, [["off", "Screen off"], ["clock", "Clock"]], d.night_style)),
-    slider("nightBrightness", "Night brightness", 0, 100, d.night_brightness, "0 = screen off or clock"),
+    row("Night style", select(`data-k="nightStyle"`, [["off", "Screen off"], ["clock", "Clock"], ["dim", "Dim only"]], d.night_style),
+      d.night_style === "dim" ? "Pages stay as they are, just darker" : ""),
+    slider("nightBrightness", "Night brightness", d.night_style === "dim" ? 1 : 0, 100,
+      d.night_style === "dim" && d.night_brightness < 1 ? 20 : d.night_brightness,
+      d.night_style === "dim" ? "How bright the board stays at night" : "0 = screen off or clock"),
   ].join(""));
   const pc = card("PC and navigation", "", [
     row("When the PC sleeps", select(`data-k="pcSleep"`, [["off", "Screen off"], ["clock", "Clock"], ["none", "Do nothing"]], d.pc_sleep)),
@@ -442,7 +455,10 @@ function gameEditor(c: CustomGame): string {
     f("gameProcess", "Program", c.process.join(", "), "File name from Task Manager > Details, e.g. javaw.exe (comma for several)"),
     f("gameMatch", "Command line has", c.match, "Optional, e.g. minecraft for javaw.exe"),
     f("gameTitle", "Window title has", c.title, "Optional; with a title the program is optional"),
-    f("gameImage", "Picture", c.image, "Optional: a picture file"),
+    row("Picture",
+      `<input class="txt" data-k="gameImage" value="${esc(c.image)}" spellcheck="false">` +
+      `<button type="button" data-act="game-image">Browse...</button>`,
+      "Optional: shown on the board instead of the initials"),
     f("gameLaunch", "Start with", c.launch, "Optional: a program, shortcut, folder or URL"),
   ].join("") + `</div>`;
 }
@@ -510,7 +526,33 @@ function connectionHtml(): string {
       "Must match the token on the board"),
     row("Config file", `<button type="button" data-act="import">${icon("refresh-cw", 13)}Import from config.toml</button>`,
       S.imported ? "Already imported" : "Copies host and token from the Python companion's config"),
+  ].join("")) + card("Firmware", "Installs a new firmware on the board over Wi-Fi", [
+    row(fwBusy ? "Updating..." : "Update firmware",
+      `<button type="button" data-act="firmware"${fwBusy || st.state !== "connected" ? " disabled" : ""}>${icon("refresh-cw", 13)}Choose deskhub.bin</button>`,
+      fwBusy ? "Tap Install on the board within a minute" :
+        st.state !== "connected" ? "Connect to the board first" :
+          "The board asks before installing, then restarts. Use deskhub.bin, not the merged image"),
+    ...(fwNote ? [text(esc(fwNote))] : []),
   ].join(""));
+}
+
+// Firmware upload state (Connection section).
+let fwBusy = false;
+let fwNote = "";
+
+async function updateFirmware() {
+  fwBusy = true;
+  fwNote = "";
+  render(true);
+  try {
+    const answer = await api.boardFirmware();
+    fwNote = answer.includes("installed") ? "Installed. The board restarts and reconnects in a few seconds." : answer;
+  } catch (err) {
+    const msg = String(err);
+    fwNote = msg.includes("No file chosen") ? "" : `Not installed: ${msg}`;
+  }
+  fwBusy = false;
+  render(true);
 }
 
 function aboutHtml(): string {
@@ -601,6 +643,12 @@ async function act(el: HTMLElement) {
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
     case "import": await importConfig(); return;
+    case "firmware": await updateFirmware(); return;
+    case "game-image": {
+      const path = await api.pickImage();
+      if (path) gamePatch({ image: path });
+      return;
+    }
   }
 }
 

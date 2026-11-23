@@ -19,7 +19,7 @@ export type Settings = {
     night_brightness: number;
     clock_seconds: boolean;
     night: string;
-    night_style: "off" | "clock";
+    night_style: "off" | "clock" | "dim";
     pc_sleep: "off" | "clock" | "none";
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
@@ -217,6 +217,22 @@ export const api = {
     else console.info("[mock] board_tap", x, y);
   },
   /** File picker for config.toml; null when cancelled or in browser mock mode. */
+  /** Send a firmware image to the board (picker when no path); resolves with the board's answer. */
+  boardFirmware: async (path?: string): Promise<string> => {
+    if (TAURI) return invoke<string>("board_firmware", { path: path ?? null });
+    await new Promise(r => setTimeout(r, 1500));
+    return "installed; restarting";
+  },
+  pickImage: async (): Promise<string | null> => {
+    if (!TAURI) return null;
+    const picked = await open({
+      title: "Pick a picture",
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Pictures", extensions: ["png", "jpg", "jpeg", "bmp", "webp", "gif"] }],
+    });
+    return typeof picked === "string" ? picked : null;
+  },
   pickConfig: async (): Promise<string | null> => {
     if (!TAURI) return null;
     const picked = await open({

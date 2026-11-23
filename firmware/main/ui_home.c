@@ -515,7 +515,7 @@ static void layout_printer(int w, int h)
 
 // ---- game (Steam) ---------------------------------------------------------
 // The game being played, or the last one with a play button.
-static lv_obj_t *s_gm_img, *s_gm_ph, *s_gm_cap, *s_gm_sub, *s_gm_name, *s_gm_play;
+static lv_obj_t *s_gm_img, *s_gm_ph, *s_gm_pi, *s_gm_cap, *s_gm_sub, *s_gm_name, *s_gm_play;
 static uint32_t s_gm_appid;   // what the play button launches
 static int s_gm_iw = 2, s_gm_ih = 3;   // shape of the cover shown (2:3 until one arrives)
 
@@ -533,11 +533,10 @@ static void create_game(lv_obj_t *page)
     s_gm_ph = lv_obj_create(c);
     lv_obj_remove_style_all(s_gm_ph);
     lv_obj_remove_flag(s_gm_ph, LV_OBJ_FLAG_CLICKABLE);
+    games_placeholder_init(s_gm_ph, g_font_24);
     lv_obj_set_style_radius(s_gm_ph, 8, 0);
-    lv_obj_set_style_bg_color(s_gm_ph, lv_color_hex(COL_CARD_HI), 0);
-    lv_obj_set_style_bg_opa(s_gm_ph, LV_OPA_COVER, 0);
-    lv_obj_t *pi = ui_label(s_gm_ph, g_icon_32, COL_DIM, ICON_SPORTS_ESPORTS);
-    lv_obj_center(pi);
+    s_gm_pi = ui_label(s_gm_ph, g_icon_32, COL_DIM, ICON_SPORTS_ESPORTS);   // when no game
+    lv_obj_center(s_gm_pi);
     s_gm_img = lv_image_create(c);
     lv_obj_remove_flag(s_gm_img, LV_OBJ_FLAG_CLICKABLE);
     lv_image_set_inner_align(s_gm_img, LV_IMAGE_ALIGN_STRETCH);
@@ -1397,6 +1396,10 @@ void home_refresh_game(void)
     s_gm_appid = (!s->playing && g) ? g->appid : 0;
     if (s_gm_appid) lv_obj_remove_flag(s_gm_play, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(s_gm_play, LV_OBJ_FLAG_HIDDEN);
+
+    games_placeholder_set(s_gm_ph, g ? g->name : "");
+    if (g) lv_obj_add_flag(s_gm_pi, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(s_gm_pi, LV_OBJ_FLAG_HIDDEN);
 
     uint32_t thumb_id = 0;
     const lv_image_dsc_t *thumb = games_thumb(&thumb_id);
