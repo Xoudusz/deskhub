@@ -31,7 +31,8 @@ The board runs custom firmware (ESP-IDF + LVGL). A small Python app on your Wind
 - [Commands](#commands)
 - [Calendars](#calendars)
 - [Choosing pages](#choosing-pages)
-- [When the PC sleeps](#when-the-pc-sleeps) and [Night mode](#night-mode)
+- [When the PC sleeps](#when-the-pc-sleeps), [Night mode](#night-mode) and [Brightness](#brightness)
+- [ESP32-P4 board](#esp32-p4-board)
 - [Steam](#steam) and [Games that aren't on Steam](#games-that-arent-on-steam)
 - [Internet](#internet) and [GitHub contributions](#github-contributions)
 - [Customizing Home](#customizing-home)
@@ -70,6 +71,7 @@ Home is a 5 × 3 grid you arrange yourself, with widgets in the sizes you choose
 ## What you need
 
 - A [Waveshare ESP32-S3-Touch-LCD-4.3B](https://www.waveshare.com/esp32-s3-touch-lcd-4.3b.htm). This is the **B** model (800 × 480, capacitive touch). Other boards have different wiring and won't work without changes.
+  - Or the **Waveshare ESP32-P4-WIFI6-Touch-LCD-4.3** (480 × 800 panel, used in landscape). It can dim its backlight; see [ESP32-P4 board](#esp32-p4-board).
 - A USB-C **data** cable. Some cables only carry power.
 - A Windows 10/11 PC on the same network. NVIDIA GPU stats need an NVIDIA driver; everything else works on any PC.
 - A **2.4 GHz** Wi-Fi network. The ESP32-S3 can't join 5 GHz networks.
@@ -290,6 +292,40 @@ night_style = "clock"   # "off" (screen dark, default) or "clock"
 ```
 
 The board keeps the schedule itself, so it still goes dark with the PC off. As with the PC sleeping, a touch brings it back for a minute. Setup asks for both (the *Screen sleep and night mode* step).
+
+### Brightness
+
+The ESP32-P4 board can dim its backlight. Set a day level and a night level in percent:
+
+```toml
+[display]
+brightness = 100        # 1-100, by day
+night_brightness = 15   # 0-100 during night mode; 0 = go dark (or show the clock) as before
+```
+
+With `night_brightness` above 0 the screen stays on at that level through the night instead of going dark; with `night_style = "clock"` the clock shows at that level. The 4.3B can only switch its backlight on or off, so it ignores `brightness`, and it treats `night_brightness` as 0. Setup asks for both.
+
+## ESP32-P4 board
+
+The firmware also builds for the Waveshare ESP32-P4-WIFI6-Touch-LCD-4.3. Its Wi-Fi comes from the on-board ESP32-C6 (the firmware drives it through `esp_hosted`), and its panel is portrait, so the firmware turns the dashboard onto it.
+
+The ESP32-P4 comes in two chip revisions that need different firmware. Read yours with the board plugged in:
+
+```
+uvx esptool --chip esp32p4 -p COM5 chip_id
+```
+
+`v1.x` (for example v1.3) needs the `p4rev1` build, `v3.x` the `p4rev3` build. Build on Linux or WSL with Docker (no ESP-IDF install needed):
+
+```
+cd firmware
+cp sdkconfig.local.example sdkconfig.local   # then fill in Wi-Fi, token and city
+./build.sh p4rev3
+```
+
+`out/p4rev3/deskhub-merged.bin` is the whole flash image; write it once over USB (the **USB TO UART** port) with `uvx esptool --chip esp32p4 -p COM5 write_flash 0x0 out/p4rev3/deskhub-merged.bin`. After that, `out/p4rev3/deskhub.bin` updates the board over Wi-Fi like on the 4.3B. CI builds all three variants (`s3`, `p4rev1`, `p4rev3`) on every push.
+
+If the picture is upside down, or taps land on the wrong side, turn on `HUB_ROTATION_270` or `HUB_TOUCH_ROTATE_180` in `sdkconfig.local` and build again.
 
 ## Steam
 

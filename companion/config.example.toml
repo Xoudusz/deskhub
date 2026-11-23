@@ -232,6 +232,12 @@ pc_sleep = "off"
 # night = "23:00-07:00"
 # What the board shows at night: "off" (screen dark) or "clock".
 # night_style = "off"
+# Screen brightness by day, 1-100 (default 100). Dimming needs the ESP32-P4 board; the
+# 4.3B only switches its backlight on or off, so brightness is ignored there.
+# brightness = 100
+# Brightness at night, 0-100 (default 0 = dark or clock, as before). Above 0 the ESP32-P4
+# board stays on at this level through the night; the 4.3B ignores it and goes dark.
+# night_brightness = 0
 
 # 3D printers, up to 4 in any mix. Easiest: run `uv run deskhub-printers` and pick the
 # brand. Passwords, API keys, access codes and tokens live in the OS credential store
