@@ -116,6 +116,8 @@ impl Default for Pages {
 pub struct Home {
     pub header: bool,
     pub grid: Vec<GridItem>,
+    /// Layouts the user saved in the Home builder (the built-in ones live in the UI).
+    pub presets: Vec<HomePreset>,
 }
 
 impl Default for Home {
@@ -123,8 +125,18 @@ impl Default for Home {
         Self {
             header: true,
             grid: pages::default_grid(),
+            presets: Vec::new(),
         }
     }
+}
+
+/// A saved Home layout: header on/off plus the block grid.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HomePreset {
+    pub name: String,
+    pub header: bool,
+    pub grid: Vec<GridItem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -885,5 +897,23 @@ mod tests {
         // Missing sections keep the defaults.
         let d = import_config_toml("").unwrap();
         assert_eq!(d.ai, Ai::default());
+    }
+
+    #[test]
+    fn home_presets_round_trip_and_default_empty() {
+        let mut s = Settings::default();
+        assert!(s.home.presets.is_empty());
+        s.home.presets.push(HomePreset {
+            name: "Mine".into(),
+            header: false,
+            grid: pages::default_grid(),
+        });
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["home"]["presets"][0]["name"], "Mine");
+        let back: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(back.home.presets, s.home.presets);
+        // Settings saved before presets existed still load.
+        let old: Settings = serde_json::from_str(r#"{"home": {"header": true}}"#).unwrap();
+        assert!(old.home.presets.is_empty());
     }
 }

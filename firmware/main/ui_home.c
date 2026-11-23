@@ -995,6 +995,17 @@ void home_set_layout(const char *spec)
         nvs_close(h);
     }
     home_apply_layout();
+    // Widgets that were hidden or changed size lay their content out again; without
+    // this a new block stayed empty until the next full rebuild (page toggle).
+    home_refresh_events();
+    home_refresh_media();
+    home_refresh_stats();
+    home_refresh_claude();
+    home_refresh_weather();
+    home_refresh_printer();
+    home_refresh_game();
+    home_refresh_net();
+    home_refresh_github();
 }
 
 void home_create(lv_obj_t *page)

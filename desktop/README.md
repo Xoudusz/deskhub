@@ -40,7 +40,8 @@ type Settings = {
     clock_seconds: boolean;      // Home clock shows seconds (layout key "seconds")
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };   // order = navigation order
-  home: { header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
+  home: {
+    presets: { name: string; header: boolean; grid: GridCell[] }[];  // user-saved layouts header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };   // default midnight
   ai: {
     agent: "auto" | "claude" | "codex";   // auto = most recently used

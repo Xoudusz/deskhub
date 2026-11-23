@@ -23,7 +23,7 @@ export type Settings = {
     pc_sleep: "off" | "clock" | "none";
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
-  home: { header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
+  home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
   imported: boolean;
@@ -65,6 +65,42 @@ export const HOME_SIZES: Record<Widget, { w: [number, number]; h: [number, numbe
   github: { w: [2, 5], h: [1, 2] },
 };
 
+/** One Home block, in grid cells. */
+export type GridCell = { widget: string; x: number; y: number; w: number; h: number };
+/** A named Home layout. */
+export type HomePreset = { name: string; header: boolean; grid: GridCell[] };
+
+/** Built-in layouts. "Default" matches the Rust default (pages::default_grid). */
+export const BUILTIN_PRESETS: HomePreset[] = [
+  {
+    name: "Default", header: true, grid: [
+      { widget: "claude", x: 0, y: 0, w: 3, h: 1 },
+      { widget: "events", x: 0, y: 1, w: 3, h: 2 },
+      { widget: "weather", x: 3, y: 0, w: 2, h: 1 },
+      { widget: "media", x: 3, y: 1, w: 2, h: 1 },
+      { widget: "stats", x: 3, y: 2, w: 2, h: 1 },
+    ],
+  },
+  {
+    name: "Focus", header: false, grid: [
+      { widget: "clock", x: 0, y: 0, w: 3, h: 2 },
+      { widget: "claude", x: 0, y: 2, w: 3, h: 1 },
+      { widget: "weather", x: 3, y: 0, w: 2, h: 1 },
+      { widget: "media", x: 3, y: 1, w: 2, h: 1 },
+      { widget: "stats", x: 3, y: 2, w: 2, h: 1 },
+    ],
+  },
+  {
+    name: "Dashboard", header: true, grid: [
+      { widget: "claude", x: 0, y: 0, w: 5, h: 1 },
+      { widget: "stats", x: 0, y: 1, w: 2, h: 1 },
+      { widget: "media", x: 2, y: 1, w: 3, h: 1 },
+      { widget: "weather", x: 0, y: 2, w: 2, h: 1 },
+      { widget: "events", x: 2, y: 2, w: 3, h: 1 },
+    ],
+  },
+];
+
 export const GRID_COLS = 5;
 export const GRID_ROWS = 3;
 
@@ -85,6 +121,7 @@ const mock: Settings = {
       { widget: "weather", x: 0, y: 1, w: 2, h: 1 },
       { widget: "media", x: 2, y: 1, w: 3, h: 1 },
     ],
+    presets: [],
   },
   appearance: { theme: "midnight" },
   ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
