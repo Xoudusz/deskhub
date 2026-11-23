@@ -1,6 +1,7 @@
 //! The board link: connect, hello, layout and home, forward queued messages, reconnect.
 //! Mirrors companion/deskhub/__main__.py session() and run().
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, StreamExt};
@@ -38,6 +39,27 @@ impl Default for Options {
     }
 }
 
+/// One outgoing frame: JSON text, or a binary frame (ART1 album art, STM1 game art).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Out {
+    Json(Value),
+    Bin(Vec<u8>),
+}
+
+/// The latest frame per key (e.g. "stats", "media", "art"), in first-publish order.
+/// The board keeps this state in RAM only, so all of it is resent after each connect.
+#[derive(Default)]
+struct Latest(Vec<(String, Out)>);
+
+impl Latest {
+    fn set(&mut self, key: &str, out: Out) {
+        match self.0.iter_mut().find(|(k, _)| k == key) {
+            Some(slot) => slot.1 = out,
+            None => self.0.push((key.to_string(), out)),
+        }
+    }
+}
+
 /// Entry point. Must run inside a tokio runtime.
 pub struct Service;
 
@@ -45,9 +67,10 @@ pub struct Service;
 pub struct ServiceHandle {
     status_rx: watch::Receiver<Status>,
     settings_tx: watch::Sender<Settings>,
-    out_tx: mpsc::UnboundedSender<Value>,
+    out_tx: mpsc::UnboundedSender<Out>,
     incoming_tx: broadcast::Sender<Incoming>,
     stop_tx: watch::Sender<bool>,
+    latest: Arc<Mutex<Latest>>,
 }
 
 impl Service {
@@ -61,6 +84,7 @@ impl Service {
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         let (incoming_tx, _) = broadcast::channel(64);
         let (stop_tx, stop_rx) = watch::channel(false);
+        let latest = Arc::new(Mutex::new(Latest::default()));
         let task = Task {
             opts,
             settings_rx,
@@ -68,9 +92,17 @@ impl Service {
             status_tx,
             incoming_tx: incoming_tx.clone(),
             stop_rx,
+            latest: latest.clone(),
         };
         tokio::spawn(task.run());
-        ServiceHandle { status_rx, settings_tx, out_tx, incoming_tx, stop_tx }
+        ServiceHandle {
+            status_rx,
+            settings_tx,
+            out_tx,
+            incoming_tx,
+            stop_tx,
+            latest,
+        }
     }
 }
 
@@ -84,9 +116,40 @@ impl ServiceHandle {
         let _ = self.settings_tx.send_replace(settings);
     }
 
-    /// Queue a message for the board. Dropped while the link is down.
+    /// Queue a one-off message for the board. Dropped while the link is down.
     pub fn send(&self, msg: Value) {
-        let _ = self.out_tx.send(msg);
+        let _ = self.out_tx.send(Out::Json(msg));
+    }
+
+    /// Publish the current state for `key` (e.g. "stats"): sent now if connected, and
+    /// resent after every reconnect until replaced.
+    pub fn publish(&self, key: &str, msg: Value) {
+        self.publish_out(key, Out::Json(msg));
+    }
+
+    /// Like `publish`, for a binary frame (album or game art).
+    pub fn publish_bin(&self, key: &str, frame: Vec<u8>) {
+        self.publish_out(key, Out::Bin(frame));
+    }
+
+    fn publish_out(&self, key: &str, out: Out) {
+        // Store and queue under one lock, so two publishers of a key can't reorder.
+        let mut latest = self.latest.lock().unwrap();
+        latest.set(key, out.clone());
+        let _ = self.out_tx.send(out);
+    }
+
+    /// A cheap clonable publisher for collector tasks.
+    pub fn publisher(&self) -> Publisher {
+        Publisher {
+            out_tx: self.out_tx.clone(),
+            latest: self.latest.clone(),
+        }
+    }
+
+    /// The live settings (collectors watch this).
+    pub fn settings(&self) -> watch::Receiver<Settings> {
+        self.settings_tx.subscribe()
     }
 
     /// Every message the board sends after hello, parsed.
@@ -96,6 +159,35 @@ impl ServiceHandle {
 
     pub fn stop(&self) {
         let _ = self.stop_tx.send_replace(true);
+    }
+}
+
+/// Publish side of a `ServiceHandle`, for collector tasks (clone freely).
+#[derive(Clone)]
+pub struct Publisher {
+    out_tx: mpsc::UnboundedSender<Out>,
+    latest: Arc<Mutex<Latest>>,
+}
+
+impl Publisher {
+    pub fn publish(&self, key: &str, msg: Value) {
+        self.publish_out(key, Out::Json(msg));
+    }
+
+    pub fn publish_bin(&self, key: &str, frame: Vec<u8>) {
+        self.publish_out(key, Out::Bin(frame));
+    }
+
+    /// One-off message (not resent after reconnect).
+    pub fn send(&self, msg: Value) {
+        let _ = self.out_tx.send(Out::Json(msg));
+    }
+
+    fn publish_out(&self, key: &str, out: Out) {
+        // Store and queue under one lock, so two publishers of a key can't reorder.
+        let mut latest = self.latest.lock().unwrap();
+        latest.set(key, out.clone());
+        let _ = self.out_tx.send(out);
     }
 }
 
@@ -121,10 +213,11 @@ enum Reply {
 struct Task {
     opts: Options,
     settings_rx: watch::Receiver<Settings>,
-    out_rx: mpsc::UnboundedReceiver<Value>,
+    out_rx: mpsc::UnboundedReceiver<Out>,
     status_tx: watch::Sender<Status>,
     incoming_tx: broadcast::Sender<Incoming>,
     stop_rx: watch::Receiver<bool>,
+    latest: Arc<Mutex<Latest>>,
 }
 
 impl Task {
@@ -209,7 +302,11 @@ impl Task {
             _ => return End::Lost { was_up: false },
         };
 
-        if ws.send(Message::text(hello(&settings.board.token).to_string())).await.is_err() {
+        if ws
+            .send(Message::text(hello(&settings.board.token).to_string()))
+            .await
+            .is_err()
+        {
             return End::Lost { was_up: false };
         }
         let version = match timeout(self.opts.hello_timeout, read_hello(&mut ws)).await {
@@ -231,11 +328,36 @@ impl Task {
         let mut last_layout = layout_message(&current);
         let mut last_home = home_message(&current);
         let (mut sink, mut stream) = ws.split();
-        if sink.send(frame(&last_layout)).await.is_err() || sink.send(frame(&last_home)).await.is_err() {
+        if sink.send(frame(&last_layout)).await.is_err()
+            || sink.send(frame(&last_home)).await.is_err()
+        {
             return End::Lost { was_up: true };
         }
+        // Then every published state (stats, media + art, ...), oldest key first. Frames
+        // queued while the link was down are stale copies of it (or one-off messages
+        // that are dropped while offline anyway): drop them so nothing goes out twice.
+        while self.out_rx.try_recv().is_ok() {}
+        // Binary frames (art) first, so a media message never points at art the board
+        // hasn't received yet.
+        let mut snapshot: Vec<Out> = self
+            .latest
+            .lock()
+            .unwrap()
+            .0
+            .iter()
+            .map(|(_, o)| o.clone())
+            .collect();
+        snapshot.sort_by_key(|o| matches!(o, Out::Json(_)));
+        for out in &snapshot {
+            if sink.send(out_frame(out)).await.is_err() {
+                return End::Lost { was_up: true };
+            }
+        }
 
-        let mut ping = interval_at(Instant::now() + self.opts.ping_interval, self.opts.ping_interval);
+        let mut ping = interval_at(
+            Instant::now() + self.opts.ping_interval,
+            self.opts.ping_interval,
+        );
         loop {
             tokio::select! {
                 incoming = stream.next() => match incoming {
@@ -245,7 +367,7 @@ impl Task {
                 },
                 out = self.out_rx.recv() => match out {
                     Some(msg) => {
-                        if sink.send(frame(&msg)).await.is_err() {
+                        if sink.send(out_frame(&msg)).await.is_err() {
                             return End::Lost { was_up: true };
                         }
                     }
@@ -296,17 +418,31 @@ impl Task {
     }
 }
 
+fn out_frame(out: &Out) -> Message {
+    match out {
+        Out::Json(v) => frame(v),
+        Out::Bin(b) => Message::binary(b.clone()),
+    }
+}
+
 /// Wait for the reply to hello. A close right after hello means the board refused
 /// the token; other socket errors only mean the link is gone.
 async fn read_hello(ws: &mut Ws) -> Reply {
     while let Some(frame) = ws.next().await {
         match frame {
             Ok(Message::Text(text)) => {
-                let Ok(v) = serde_json::from_str::<Value>(&text) else { return Reply::Other };
+                let Ok(v) = serde_json::from_str::<Value>(&text) else {
+                    return Reply::Other;
+                };
                 if v.get("type").and_then(Value::as_str) != Some("hello_ok") {
                     return Reply::Other;
                 }
-                return Reply::Hello(v.get("version").and_then(Value::as_str).unwrap_or("?").to_string());
+                return Reply::Hello(
+                    v.get("version")
+                        .and_then(Value::as_str)
+                        .unwrap_or("?")
+                        .to_string(),
+                );
             }
             // A wrong token makes the board drop the socket: a close frame, or a TCP
             // close without one (ResetWithoutClosingHandshake).
@@ -336,7 +472,10 @@ fn frame(v: &Value) -> Message {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -380,12 +519,22 @@ mod tests {
     }
 
     async fn accept(listener: &TcpListener) -> WebSocketStream<TcpStream> {
-        let (stream, _) = timeout(WAIT, listener.accept()).await.expect("no connection").unwrap();
-        timeout(WAIT, accept_async(stream)).await.expect("handshake timeout").unwrap()
+        let (stream, _) = timeout(WAIT, listener.accept())
+            .await
+            .expect("no connection")
+            .unwrap();
+        timeout(WAIT, accept_async(stream))
+            .await
+            .expect("handshake timeout")
+            .unwrap()
     }
 
     async fn next_json(ws: &mut WebSocketStream<TcpStream>) -> Value {
-        let frame = timeout(WAIT, ws.next()).await.expect("no message").expect("closed").unwrap();
+        let frame = timeout(WAIT, ws.next())
+            .await
+            .expect("no message")
+            .expect("closed")
+            .unwrap();
         match frame {
             Message::Text(text) => serde_json::from_str(&text).unwrap(),
             other => panic!("expected text frame, got {other:?}"),
@@ -404,7 +553,10 @@ mod tests {
 
     async fn wait_state(svc: &super::ServiceHandle, want: State) -> Status {
         let mut rx = svc.status();
-        let st = timeout(WAIT, rx.wait_for(|s| s.state == want)).await.expect("state timeout").unwrap();
+        let st = timeout(WAIT, rx.wait_for(|s| s.state == want))
+            .await
+            .expect("state timeout")
+            .unwrap();
         (*st).clone()
     }
 
@@ -438,6 +590,50 @@ mod tests {
         let st = wait_state(&svc, State::Refused).await;
         assert_eq!(st.detail, "Wrong token?");
         assert_eq!(st.firmware, None);
+        svc.stop();
+    }
+
+    #[tokio::test]
+    async fn published_state_is_sent_live_and_resent_after_reconnect() {
+        let (listener, port) = bind().await;
+        let settings = settings_for(port, "secret");
+        let svc = Service::start_with(settings.clone(), fast());
+        let publisher = svc.publisher();
+        // Published while offline: kept for the first connect.
+        publisher.publish_bin("art", vec![b'A', b'R', b'T', b'1']);
+        publisher.publish("media", json!({"type": "media", "title": "one"}));
+
+        let mut ws = accept(&listener).await;
+        handshake(&mut ws, "secret").await;
+        assert_eq!(next_json(&mut ws).await, layout_message(&settings));
+        assert_eq!(next_json(&mut ws).await, home_message(&settings));
+        let art = timeout(WAIT, ws.next()).await.unwrap().unwrap().unwrap();
+        assert_eq!(art, Message::binary(vec![b'A', b'R', b'T', b'1']));
+        assert_eq!(
+            next_json(&mut ws).await,
+            json!({"type": "media", "title": "one"})
+        );
+
+        // Live update replaces the stored state and goes out at once.
+        wait_state(&svc, State::Connected).await;
+        svc.publish("media", json!({"type": "media", "title": "two"}));
+        assert_eq!(
+            next_json(&mut ws).await,
+            json!({"type": "media", "title": "two"})
+        );
+
+        // After a drop, the latest state (not the old one) is resent, art first.
+        drop(ws);
+        let mut ws = accept(&listener).await;
+        handshake(&mut ws, "secret").await;
+        next_json(&mut ws).await; // layout
+        next_json(&mut ws).await; // home
+        let art = timeout(WAIT, ws.next()).await.unwrap().unwrap().unwrap();
+        assert!(matches!(art, Message::Binary(_)));
+        assert_eq!(
+            next_json(&mut ws).await,
+            json!({"type": "media", "title": "two"})
+        );
         svc.stop();
     }
 
@@ -508,7 +704,10 @@ mod tests {
         let (listener, port) = bind().await;
         let svc = Service::start_with(
             settings_for(port, "secret"),
-            Options { hello_timeout: Duration::from_millis(100), ..fast() },
+            Options {
+                hello_timeout: Duration::from_millis(100),
+                ..fast()
+            },
         );
         // First connection: never answer hello.
         let mut silent = accept(&listener).await;
@@ -529,7 +728,11 @@ mod tests {
         assert_eq!(next_json(&mut ws).await["type"], "layout");
         assert_eq!(next_json(&mut ws).await["type"], "home");
 
-        send_json(&mut ws, json!({"type": "alert_action", "id": "a1", "action": "deny"})).await;
+        send_json(
+            &mut ws,
+            json!({"type": "alert_action", "id": "a1", "action": "deny"}),
+        )
+        .await;
         send_json(&mut ws, json!({"type": "media", "cmd": "next", "value": 0})).await;
         send_json(&mut ws, json!({"type": "steam_launch", "appid": 730})).await;
         send_json(&mut ws, json!({"type": "speedtest"})).await;
@@ -537,15 +740,24 @@ mod tests {
         send_json(&mut ws, json!({"type": "unknown", "x": 1})).await;
 
         let expected = [
-            Incoming::AlertAction { id: "a1".into(), action: "deny".into() },
-            Incoming::Media { cmd: "next".into(), value: 0 },
+            Incoming::AlertAction {
+                id: "a1".into(),
+                action: "deny".into(),
+            },
+            Incoming::Media {
+                cmd: "next".into(),
+                value: 0,
+            },
             Incoming::SteamLaunch { appid: 730 },
             Incoming::Speedtest,
             Incoming::Shortcut { id: 4 },
             Incoming::Other(json!({"type": "unknown", "x": 1})),
         ];
         for want in expected {
-            let got = timeout(WAIT, rx.recv()).await.expect("no incoming").unwrap();
+            let got = timeout(WAIT, rx.recv())
+                .await
+                .expect("no incoming")
+                .unwrap();
             assert_eq!(got, want);
         }
         svc.stop();
