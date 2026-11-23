@@ -9,6 +9,8 @@ use crate::protocol::Incoming;
 use crate::session::{Publisher, ServiceHandle};
 use crate::settings::Settings;
 
+pub mod ai;
+pub mod alerts;
 pub mod media;
 pub mod power;
 pub mod stats;
@@ -35,4 +37,6 @@ pub fn start_all(handle: &ServiceHandle) {
     tokio::spawn(stats::run(Ctx::new(handle)));
     tokio::spawn(media::run(Ctx::new(handle)));
     tokio::spawn(power::run(Ctx::new(handle)));
+    tokio::spawn(ai::run(Ctx::new(handle)));
+    tokio::spawn(alerts::run(Ctx::new(handle)));
 }

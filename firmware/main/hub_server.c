@@ -277,6 +277,8 @@ static void on_layout(const cJSON *m)
     if (!strcmp(nav, "left")) ui_set_nav(0);
     else if (!strcmp(nav, "right")) ui_set_nav(1);
     else if (!strcmp(nav, "bottom")) ui_set_nav(2);
+    // "seconds": the Home clock shows seconds (absent = off, as older companions).
+    ui_set_clock_seconds(get_bool(m, "seconds"));
     display_unlock();
     // "pc_sleep": what the board does while the PC's display sleeps: "off" | "clock" | "none".
     char sleep[8];

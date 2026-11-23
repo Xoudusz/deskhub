@@ -9,11 +9,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 export type Page = "home" | "stats" | "ai" | "calendar" | "weather" | "media" | "printer" | "shortcuts" | "timer" | "games" | "network" | "github";
 export type Widget = "clock" | "claude" | "events" | "weather" | "media" | "stats" | "printer" | "game" | "net" | "github";
 
+/** Claude Code wiring: status line and hooks point at deskhub-cli; cli = the helper exists. */
+export type ClaudeState = { statusline: boolean; hooks: boolean; cli: boolean };
+
 export type Settings = {
   board: { host: string; token: string };
   display: {
     brightness: number;
     night_brightness: number;
+    clock_seconds: boolean;
     night: string;
     night_style: "off" | "clock";
     pc_sleep: "off" | "clock" | "none";
@@ -21,6 +25,7 @@ export type Settings = {
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
   home: { header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
+  ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
   imported: boolean;
 };
 
@@ -70,7 +75,7 @@ const clone = <T>(v: T): T => structuredClone(v);
 // ---- mock backend (browser dev only) ----
 const mock: Settings = {
   board: { host: "deskhub.local", token: "" },
-  display: { brightness: 100, night_brightness: 0, night: "", night_style: "off", pc_sleep: "off" },
+  display: { brightness: 100, night_brightness: 0, night: "", night_style: "off", pc_sleep: "off", clock_seconds: false },
   pages: { enabled: ["home", "stats", "ai", "weather", "media", "shortcuts", "timer", "network"], nav: "left" },
   home: {
     header: true,
@@ -81,7 +86,8 @@ const mock: Settings = {
       { widget: "media", x: 2, y: 1, w: 3, h: 1 },
     ],
   },
-  appearance: { theme: "purple" },
+  appearance: { theme: "midnight" },
+  ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
@@ -132,6 +138,11 @@ export const api = {
     });
     return typeof picked === "string" ? picked : null;
   },
+  /** Claude Code status line + hooks state; the mock says "not connected". */
+  claudeStatus: (): Promise<ClaudeState> =>
+    TAURI ? invoke<ClaudeState>("claude_status") : Promise.resolve({ statusline: false, hooks: false, cli: true }),
+  claudeConnect: (on: boolean): Promise<ClaudeState> =>
+    TAURI ? invoke<ClaudeState>("claude_connect", { on }) : Promise.resolve({ statusline: on, hooks: on, cli: true }),
   importConfig: (path?: string): Promise<Settings> => {
     if (TAURI) return invoke<Settings>("import_config", { path });
     mock.imported = true;

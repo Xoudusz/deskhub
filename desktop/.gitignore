@@ -3,3 +3,4 @@ dist
 *.log
 target
 src-tauri/gen
+src-tauri/binaries

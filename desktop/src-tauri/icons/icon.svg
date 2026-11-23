@@ -1,14 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Midnight theme colours: panel3 #141829, bg #05060a, accent #7b8cff and #a5b4ff -->
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8b5cf6"/>
-      <stop offset="1" stop-color="#4c1d95"/>
+      <stop offset="0" stop-color="#1a1f36"/>
+      <stop offset="1" stop-color="#05060a"/>
     </linearGradient>
   </defs>
   <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#g)"/>
-  <rect x="96" y="132" width="320" height="200" rx="24" fill="none" stroke="#fff" stroke-width="28"/>
-  <rect x="136" y="172" width="44" height="120" rx="10" fill="#fff" opacity=".85"/>
-  <rect x="204" y="172" width="172" height="52" rx="10" fill="#fff" opacity=".6"/>
-  <rect x="204" y="240" width="172" height="52" rx="10" fill="#fff" opacity=".6"/>
-  <path d="M206 384h100l14 32H192z" fill="#fff"/>
+  <rect x="17" y="17" width="478" height="478" rx="107" fill="none" stroke="#2c3150" stroke-width="2"/>
+  <rect x="96" y="132" width="320" height="200" rx="24" fill="none" stroke="#7b8cff" stroke-width="28"/>
+  <rect x="136" y="172" width="44" height="120" rx="10" fill="#a5b4ff" opacity=".9"/>
+  <rect x="204" y="172" width="172" height="52" rx="10" fill="#7b8cff" opacity=".55"/>
+  <rect x="204" y="240" width="172" height="52" rx="10" fill="#7b8cff" opacity=".55"/>
+  <path d="M206 384h100l14 32H192z" fill="#7b8cff"/>
 </svg>

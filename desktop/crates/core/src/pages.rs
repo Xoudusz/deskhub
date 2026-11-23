@@ -198,6 +198,7 @@ pub fn layout_message(s: &Settings) -> Value {
         "night_style": s.display.night_style.as_str(),
         "brightness": s.display.brightness.clamp(1, 100),
         "night_brightness": s.display.night_brightness.clamp(0, 100),
+        "seconds": s.display.clock_seconds,
     })
 }
 
@@ -378,6 +379,7 @@ mod tests {
                 "night_style": "off",
                 "brightness": 100,
                 "night_brightness": 0,
+                "seconds": false,
             })
         );
     }
@@ -476,5 +478,12 @@ mod tests {
                 item("media", 3, 2, 2, 1),
             ]
         );
+    }
+
+    #[test]
+    fn layout_carries_clock_seconds() {
+        let mut s = Settings::default();
+        s.display.clock_seconds = true;
+        assert_eq!(layout_message(&s)["seconds"], serde_json::json!(true));
     }
 }

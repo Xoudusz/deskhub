@@ -7,11 +7,11 @@ import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
   api, win, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
-  type Page, type Settings, type SettingsPatch, type Status, type Widget,
+  type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 
-type SectionId = "status" | "display" | "pages" | "appearance" | "connection" | "about";
+type SectionId = "status" | "display" | "pages" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
 type Cell = Settings["home"]["grid"][number];
 
@@ -19,6 +19,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["status", "gauge", "Status"],
   ["display", "sun", "Display"],
   ["pages", "layout-grid", "Pages"],
+  ["ai", "sparkles", "AI agents"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
   ["about", "info", "About"],
@@ -147,6 +148,7 @@ function sectionHtml(): string {
     case "status": return statusHtml();
     case "display": return displayHtml();
     case "pages": return pagesHtml();
+    case "ai": return aiHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
     case "about": return aboutHtml();
@@ -172,6 +174,7 @@ function displayHtml(): string {
   const nightOn = d.night !== "";
   const [from, to] = nightOn ? d.night.split("-") : ["22:00", "07:00"];
   const brightness = card("Brightness", "", slider("brightness", "Brightness", 1, 100, d.brightness));
+  const clock = card("Clock", "", row("Show seconds", tgl(`data-k="clockSeconds"`, d.clock_seconds), "Home clock on the board"));
   const night = card("Night", "Dims the board after dark", [
     row(`${icon("moon", 14)}Night mode`, tgl(`data-k="nightOn"`, nightOn)),
     ...(nightOn
@@ -188,7 +191,7 @@ function displayHtml(): string {
     row("Navigation bar", select(`data-k="nav"`, [["left", "Left"], ["right", "Right"], ["bottom", "Bottom"]], S.pages.nav),
       "The board restarts when this changes"),
   ].join(""));
-  return brightness + night + pc;
+  return brightness + clock + night + pc;
 }
 
 /** Enabled pages in navigation order, Home first. */
@@ -265,6 +268,51 @@ function removeCell(i: number) {
   void save({ home: { grid: S.home.grid.filter((_, j) => j !== i) } });
 }
 
+// Claude Code wiring, fetched when the AI section opens.
+let claude: ClaudeState | null = null;
+let claudeNote = "";
+let claudeLoading = false;
+
+function aiHtml(): string {
+  const a = S.ai;
+  if (!claude && !claudeLoading) {
+    claudeLoading = true;
+    api.claudeStatus()
+      .then(c => { claude = c; claudeNote = ""; })
+      .catch(err => { claude = { statusline: false, hooks: false, cli: false }; claudeNote = String(err); })
+      .finally(() => { claudeLoading = false; render(true); });
+  }
+  const linked = !!claude && claude.statusline && claude.hooks;
+  const usage = card("Usage", "What the board's AI page shows", [
+    row("Agent", select(`data-k="aiAgent"`, [["auto", "Most recently used"], ["claude", "Claude Code"], ["codex", "Codex"]], a.agent)),
+    row("Live limits", tgl(`data-k="aiLive"`, a.live_limits), "Reads the 5-hour and weekly limits from Anthropic. Coming in a later update"),
+  ].join(""));
+  const cc = card("Claude Code", "Limits and waiting alerts come from Claude Code", [
+    row(linked ? "Connected" : "Not connected",
+      `<button type="button" data-act="claude">${icon(linked ? "x" : "zap", 13)}${linked ? "Disconnect" : "Connect"}</button>`,
+      claude && !claude.cli ? "deskhub-cli is missing: reinstall Desk Hub" :
+        "Adds Desk Hub's status line and hooks to Claude Code's settings (a backup is kept)"),
+    ...(claudeNote ? [text(esc(claudeNote))] : []),
+  ].join(""));
+  const alerts = card("Alerts", "Shows on the board when Claude Code waits for you", [
+    row("Waiting alerts", tgl(`data-k="aiAlerts"`, a.alerts)),
+    row("Idle alert after", `<input class="num" type="number" min="0" max="3600" data-k="aiIdle" value="${a.idle_alert_seconds}"> s`,
+      "An idle session alerts after this many seconds"),
+  ].join(""));
+  return usage + cc + alerts;
+}
+
+async function toggleClaude() {
+  const linked = !!claude && claude.statusline && claude.hooks;
+  try {
+    claude = await api.claudeConnect(!linked);
+    claudeNote = "";
+  } catch (err) {
+    claudeNote = String(err);
+  }
+  render(true);
+}
+
 function appearanceHtml(): string {
   return card("Theme", "Applies at once", row("Colour theme", select(`data-k="theme"`, THEMES, S.appearance.theme)));
 }
@@ -327,6 +375,7 @@ async function act(el: HTMLElement) {
     case "grid-remove": removeCell(Number(el.dataset.idx)); return;
     case "step": stepSlider(el.dataset.slider as SliderKey, Number(el.dataset.d)); return;
     case "eye": showToken = !showToken; render(true); return;
+    case "claude": await toggleClaude(); return;
     case "import": await importConfig(); return;
   }
 }
@@ -399,6 +448,23 @@ main.addEventListener("change", e => {
     case "homeHeader":
       void save({ home: { header: on } });
       return;
+    case "clockSeconds":
+      void save({ display: { clock_seconds: on } });
+      return;
+    case "aiAgent":
+      void save({ ai: { agent: t.value as Settings["ai"]["agent"] } });
+      return;
+    case "aiLive":
+      void save({ ai: { live_limits: on } });
+      return;
+    case "aiAlerts":
+      void save({ ai: { alerts: on } });
+      return;
+    case "aiIdle": {
+      const v = Math.max(0, Math.min(3600, Math.round(Number(t.value) || 0)));
+      void save({ ai: { idle_alert_seconds: v } });
+      return;
+    }
     case "homeAdd": {
       const w = t.value as Widget;
       if (!w) return;
@@ -415,6 +481,7 @@ nav.addEventListener("click", e => {
   const b = (e.target as HTMLElement).closest<HTMLElement>("[data-sec]");
   if (!b) return;
   section = b.dataset.sec as SectionId;
+  if (section === "ai") claude = null; // re-read Claude Code's settings each visit
   renderNav();
   render(true);
   main.scrollTop = 0;

@@ -22,8 +22,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop -> target
-      - run: cargo test -p deskhub-core
-      - run: cargo clippy -p deskhub-core --all-targets -- -D warnings
+      - run: cargo test -p deskhub-core -p deskhub-cli
+      - run: cargo clippy -p deskhub-core -p deskhub-cli --all-targets -- -D warnings
 
   app:
     # The real app: frontend build plus Tauri shell, packed as an NSIS installer.
@@ -45,6 +45,13 @@ jobs:
           workspaces: desktop -> target
           cache-on-failure: true
       - run: npm ci
+      # deskhub-cli ships next to the app (Claude Code status line + hooks); Tauri wants
+      # sidecars named with the target triple.
+      - run: cargo build --release -p deskhub-cli
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
+          Copy-Item target/release/deskhub-cli.exe src-tauri/binaries/deskhub-cli-x86_64-pc-windows-msvc.exe
       - run: npx tauri build
       - uses: actions/upload-artifact@v4
         with:

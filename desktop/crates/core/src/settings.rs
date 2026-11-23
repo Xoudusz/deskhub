@@ -20,8 +20,34 @@ pub struct Settings {
     pub pages: Pages,
     pub home: Home,
     pub appearance: Appearance,
+    pub ai: Ai,
     /// config.toml was imported once.
     pub imported: bool,
+}
+
+/// Claude Code / Codex usage and waiting alerts (config.toml [ai] and [claude]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Ai {
+    /// "auto" (most recently used), "claude" or "codex".
+    pub agent: String,
+    /// Opt-in: read the 5-hour/weekly limits from Anthropic's usage endpoint.
+    pub live_limits: bool,
+    /// Show "Claude is waiting" alerts on the board.
+    pub alerts: bool,
+    /// An idle session raises an alert after this many seconds.
+    pub idle_alert_seconds: i64,
+}
+
+impl Default for Ai {
+    fn default() -> Self {
+        Self {
+            agent: "auto".into(),
+            live_limits: false,
+            alerts: true,
+            idle_alert_seconds: 30,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,6 +77,8 @@ pub struct Display {
     pub night: String,
     pub night_style: NightStyle,
     pub pc_sleep: PcSleep,
+    /// The Home clock shows seconds.
+    pub clock_seconds: bool,
 }
 
 impl Default for Display {
@@ -61,6 +89,7 @@ impl Default for Display {
             night: String::new(),
             night_style: NightStyle::Off,
             pc_sleep: PcSleep::Off,
+            clock_seconds: false,
         }
     }
 }
@@ -213,10 +242,10 @@ impl Nav {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
-    #[default]
     Purple,
     Blue,
     Graphite,
+    #[default]
     Midnight,
     Teal,
     Rose,
@@ -411,6 +440,26 @@ pub fn import_config_toml(text: &str) -> Result<Settings> {
         .and_then(|v| Nav::parse(&v))
         .unwrap_or_default();
 
+    if let Some(a) = section(&cfg, "ai") {
+        if let Some(agent) = text_at(a, "agent") {
+            let agent = agent.trim().to_lowercase();
+            if ["auto", "claude", "codex"].contains(&agent.as_str()) {
+                s.ai.agent = agent;
+            }
+        }
+    }
+    if let Some(c) = section(&cfg, "claude") {
+        if let Some(v) = c.get("live_limits") {
+            s.ai.live_limits = truthy(v);
+        }
+        if let Some(v) = c.get("alerts") {
+            s.ai.alerts = truthy(v);
+        }
+        if let Some(v) = c.get("idle_alert_seconds").and_then(Value::as_i64) {
+            s.ai.idle_alert_seconds = v.max(0);
+        }
+    }
+
     s.imported = true;
     s.clamp();
     Ok(s)
@@ -569,6 +618,7 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "ai",
                 "appearance",
                 "board",
                 "display",
@@ -580,7 +630,7 @@ mod tests {
         assert_eq!(v["display"]["pc_sleep"], "off");
         assert_eq!(v["display"]["night_style"], "off");
         assert_eq!(v["pages"]["nav"], "left");
-        assert_eq!(v["appearance"]["theme"], "purple");
+        assert_eq!(v["appearance"]["theme"], "midnight");
     }
 
     #[test]
@@ -633,6 +683,7 @@ mod tests {
                 "night_style": "off",
                 "brightness": 100,
                 "night_brightness": 0,
+                "seconds": false,
             })
         );
         // pages.py home_message(cfg): grid in file order, columns sorted by row.
@@ -819,5 +870,20 @@ mod tests {
             find_config(Some(Path::new("/definitely/not/here/config.toml"))),
             None
         );
+    }
+
+    #[test]
+    fn imports_ai_and_claude_sections() {
+        let s = import_config_toml(
+            "[ai]\nagent = \"Codex\"\n[claude]\nlive_limits = true\nalerts = false\nidle_alert_seconds = 45\n",
+        )
+        .unwrap();
+        assert_eq!(s.ai.agent, "codex");
+        assert!(s.ai.live_limits);
+        assert!(!s.ai.alerts);
+        assert_eq!(s.ai.idle_alert_seconds, 45);
+        // Missing sections keep the defaults.
+        let d = import_config_toml("").unwrap();
+        assert_eq!(d.ai, Ai::default());
     }
 }
