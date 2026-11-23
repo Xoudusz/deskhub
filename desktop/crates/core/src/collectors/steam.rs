@@ -20,7 +20,7 @@ pub mod vdf;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -709,6 +709,8 @@ struct Core {
     found: Option<usize>,
     league: Option<(String, String)>,
     custom_now: Option<Playing>,
+    /// Games in the last snapshot: the only ones the board may launch.
+    allowed: HashSet<u32>,
 }
 
 fn riot_client() -> String {
@@ -746,6 +748,7 @@ impl Core {
             found: None,
             league: None,
             custom_now: None,
+            allowed: HashSet::new(),
         }
     }
 
@@ -872,29 +875,67 @@ async fn store_name(client: &reqwest::Client, appid: u32) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Raw cover image: Steam's own cache, the ~/.deskhub cache, then the CDN.
+/// Result of looking in the local caches.
+enum CacheHit {
+    Bytes(Vec<u8>),
+    /// A portrait that the CDN is known not to have.
+    NoPortrait,
+    Miss,
+}
+
+fn read_cached_art(root: Option<PathBuf>, appid: u32, portrait: bool) -> CacheHit {
+    if let Some(bytes) = root
+        .and_then(|r| find_local_art(&r, appid, portrait))
+        .and_then(|p| std::fs::read(p).ok())
+    {
+        return CacheHit::Bytes(bytes);
+    }
+    let stem = format!("{appid}_{}", if portrait { "portrait" } else { "header" });
+    let Some(dir) = art_dir() else {
+        return CacheHit::Miss;
+    };
+    if let Ok(bytes) = std::fs::read(dir.join(format!("{stem}.jpg"))) {
+        return CacheHit::Bytes(bytes);
+    }
+    if portrait && dir.join(format!("{stem}.none")).is_file() {
+        return CacheHit::NoPortrait;
+    }
+    CacheHit::Miss
+}
+
+/// Write a file under the art cache, creating the folder (errors ignored: it is a cache).
+fn write_cache(path: Option<PathBuf>, body: Vec<u8>) {
+    if let Some(p) = path {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(p, body);
+    }
+}
+
+async fn write_cache_async(path: Option<PathBuf>, body: Vec<u8>) {
+    let _ = tokio::task::spawn_blocking(move || write_cache(path, body)).await;
+}
+
+/// Raw cover image: Steam's own cache, the ~/.deskhub cache, then the CDN. Disk work runs
+/// on the blocking pool; only the downloads are awaited here.
 async fn fetch_art(
     client: &reqwest::Client,
     root: Option<&Path>,
     appid: u32,
     portrait: bool,
 ) -> Option<Vec<u8>> {
-    if let Some(bytes) = root
-        .and_then(|r| find_local_art(r, appid, portrait))
-        .and_then(|p| std::fs::read(p).ok())
+    let root_owned = root.map(Path::to_path_buf);
+    match tokio::task::spawn_blocking(move || read_cached_art(root_owned, appid, portrait))
+        .await
+        .ok()?
     {
-        return Some(bytes);
+        CacheHit::Bytes(b) => return Some(b),
+        CacheHit::NoPortrait => return None,
+        CacheHit::Miss => {}
     }
     let stem = format!("{appid}_{}", if portrait { "portrait" } else { "header" });
     let dir = art_dir();
-    let jpg = dir.as_ref().map(|d| d.join(format!("{stem}.jpg")));
-    let none = dir.as_ref().map(|d| d.join(format!("{stem}.none")));
-    if let Some(bytes) = jpg.as_deref().and_then(|p| std::fs::read(p).ok()) {
-        return Some(bytes);
-    }
-    if portrait && none.as_deref().is_some_and(Path::is_file) {
-        return None;
-    }
     let mut url = format!(
         "{CDN}/{appid}/{}",
         if portrait {
@@ -916,21 +957,11 @@ async fn fetch_art(
     }
     match resp {
         Ok((404, _)) if portrait => {
-            if let Some(n) = &none {
-                if let Some(d) = n.parent() {
-                    let _ = std::fs::create_dir_all(d);
-                }
-                let _ = std::fs::write(n, b"");
-            }
+            write_cache_async(dir.map(|d| d.join(format!("{stem}.none"))), Vec::new()).await;
             None
         }
         Ok((200, body)) if !body.is_empty() => {
-            if let Some(j) = &jpg {
-                if let Some(d) = j.parent() {
-                    let _ = std::fs::create_dir_all(d);
-                }
-                let _ = std::fs::write(j, &body);
-            }
+            write_cache_async(dir.map(|d| d.join(format!("{stem}.jpg"))), body.clone()).await;
             Some(body)
         }
         Ok((status, _)) => {
@@ -948,17 +979,16 @@ async fn fetch_art(
 async fn custom_image(client: &reqwest::Client, name: &str, src: &str) -> Option<Vec<u8>> {
     if src.starts_with("http://") || src.starts_with("https://") {
         let cache = art_dir().map(|d| d.join(format!("url_{:08x}.img", crc32(src.as_bytes()))));
-        if let Some(bytes) = cache.as_deref().and_then(|p| std::fs::read(p).ok()) {
-            return Some(bytes);
+        let c = cache.clone();
+        let hit = tokio::task::spawn_blocking(move || c.and_then(|p| std::fs::read(p).ok()))
+            .await
+            .ok()?;
+        if hit.is_some() {
+            return hit;
         }
         match get(client, src).await {
             Ok((200, body)) => {
-                if let Some(c) = &cache {
-                    if let Some(d) = c.parent() {
-                        let _ = std::fs::create_dir_all(d);
-                    }
-                    let _ = std::fs::write(c, &body);
-                }
+                write_cache_async(cache, body.clone()).await;
                 Some(body)
             }
             Ok((status, _)) => {
@@ -971,9 +1001,15 @@ async fn custom_image(client: &reqwest::Client, name: &str, src: &str) -> Option
             }
         }
     } else {
-        std::fs::read(expand_path(src))
-            .map_err(|e| log::warn!("custom game {name:?}: image {src}: {e}"))
-            .ok()
+        let (path, name, src) = (expand_path(src), name.to_string(), src.to_string());
+        tokio::task::spawn_blocking(move || {
+            std::fs::read(path)
+                .map_err(|e| log::warn!("custom game {name:?}: image {src}: {e}"))
+                .ok()
+        })
+        .await
+        .ok()
+        .flatten()
     }
 }
 
@@ -1172,17 +1208,13 @@ fn launch_custom(game: &Game) -> bool {
 }
 
 /// Start a game the board asked for. Only games in the last snapshot are allowed.
-fn launch(core: &Mutex<Core>, allowed: &HashSet<u32>, appid: u32) -> bool {
-    if !allowed.contains(&appid) {
+fn launch(core: &Core, appid: u32) -> bool {
+    if !core.allowed.contains(&appid) {
         log::warn!("steam launch refused for appid {appid}");
         return false;
     }
     if is_custom(appid) {
-        let game = core
-            .lock()
-            .ok()
-            .and_then(|c| c.tracker.game(appid).cloned());
-        return game.is_some_and(|g| launch_custom(&g));
+        return core.tracker.game(appid).is_some_and(launch_custom);
     }
     log::info!("launching Steam game {appid}");
     shell_open(&format!("steam://rungameid/{appid}"))
@@ -1190,105 +1222,170 @@ fn launch(core: &Mutex<Core>, allowed: &HashSet<u32>, appid: u32) -> bool {
 
 // ---- the collector -------------------------------------------------------------
 
+/// Work for the thread that owns `Core`. Registry, process list and file reads block, so
+/// they run on that thread only; the async loop never takes a lock on the state.
+enum Cmd {
+    Tick { cfg: Games, now: f64 },
+    League { mode: &'static str, now: f64 },
+    Names(Vec<(u32, Option<String>)>),
+    Launch(u32),
+}
+
+/// What the core thread tells the async loop.
+enum Event {
+    Snapshot(Box<Snapshot>, Box<ArtRequest>),
+    NeedLeague(Option<(String, String)>),
+    NeedNames(Vec<u32>),
+}
+
+fn core_thread(
+    cmds: std::sync::mpsc::Receiver<Cmd>,
+    events: tokio::sync::mpsc::UnboundedSender<Event>,
+    tick_pending: Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::sync::atomic::Ordering;
+
+    let mut core = Core::new();
+    let emit = |core: &mut Core, snap: Snapshot| {
+        core.allowed = snap
+            .playing
+            .iter()
+            .map(|p| p.appid)
+            .chain(snap.recent.iter().map(|g| g.appid))
+            .collect();
+        let req = core.art_request(&snap);
+        let pending = core.names.take_missing();
+        let _ = events.send(Event::Snapshot(Box::new(snap), Box::new(req)));
+        if !pending.is_empty() {
+            let _ = events.send(Event::NeedNames(pending));
+        }
+    };
+    while let Ok(cmd) = cmds.recv() {
+        match cmd {
+            Cmd::Tick { cfg, now } => {
+                tick_pending.store(false, Ordering::SeqCst);
+                core.configure(&cfg, now);
+                if core.poll(now) {
+                    // The League mode decides which game this is: wait for the answer.
+                    let _ = events.send(Event::NeedLeague(core.league.clone()));
+                } else {
+                    let snap = core.step(now);
+                    emit(&mut core, snap);
+                }
+            }
+            Cmd::League { mode, now } => {
+                core.tracker.set_league(mode, now);
+                let snap = core.step(now);
+                emit(&mut core, snap);
+            }
+            Cmd::Names(found) => {
+                for (id, name) in found {
+                    core.names.resolve(id, name);
+                }
+                let snap = core.compose(now_secs());
+                emit(&mut core, snap);
+            }
+            Cmd::Launch(appid) => {
+                launch(&core, appid);
+            }
+        }
+    }
+    // The service is stopping: keep the running game's session.
+    core.tracker.finish(now_secs());
+}
+
 pub async fn run(ctx: Ctx) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     let Ctx {
         out,
         mut settings,
         mut incoming,
     } = ctx;
-    let core = Arc::new(Mutex::new(Core::new()));
     let (art_tx, art_rx) = watch::channel(ArtRequest::default());
     tokio::spawn(art_worker(out.clone(), art_rx));
     let client = http_client();
+
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+    let (ev_tx, mut ev_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let tick_pending = Arc::new(AtomicBool::new(false));
+    let league_busy = Arc::new(AtomicBool::new(false));
+    {
+        let pending = tick_pending.clone();
+        if let Err(e) = std::thread::Builder::new()
+            .name("steam-core".into())
+            .spawn(move || core_thread(cmd_rx, ev_tx, pending))
+        {
+            log::warn!("steam: could not start worker thread: {e}");
+            return;
+        }
+    }
 
     let mut ticker = tokio::time::interval(TICK);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_key: Option<Value> = None;
     let mut sent_at: Option<Instant> = None;
-    let mut allowed: HashSet<u32> = HashSet::new();
     let mut incoming_open = true;
 
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let cfg = settings.borrow_and_update().games.clone();
-                let now = now_secs();
-                let c = core.clone();
-                let needs_league = tokio::task::spawn_blocking(move || {
-                    let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
-                    g.configure(&cfg, now);
-                    g.poll(now)
-                })
-                .await
-                .unwrap_or(false);
-                if needs_league {
-                    let args = core.lock().ok().and_then(|c| c.league.clone());
-                    let mode = league_mode(args).await;
-                    if let Ok(mut g) = core.lock() {
-                        g.tracker.set_league(mode, now);
+                // One tick in the queue at most, so a slow poll can't pile them up.
+                if !tick_pending.swap(true, Ordering::SeqCst) {
+                    let cfg = settings.borrow_and_update().games.clone();
+                    if cmd_tx.send(Cmd::Tick { cfg, now: now_secs() }).is_err() {
+                        return;
                     }
                 }
-                let c = core.clone();
-                let mut snap = tokio::task::spawn_blocking(move || {
-                    c.lock().unwrap_or_else(|e| e.into_inner()).step(now)
-                })
-                .await
-                .unwrap_or_default();
-
-                // Names of games that are no longer installed: ask the Store API, then redo.
-                let pending = core.lock().map(|mut g| g.names.take_missing()).unwrap_or_default();
-                if !pending.is_empty() {
-                    if let Some(client) = &client {
-                        for id in pending {
-                            let name = store_name(client, id).await;
-                            if let Ok(mut g) = core.lock() {
-                                g.names.resolve(id, name);
-                            }
-                        }
-                    } else if let Ok(mut g) = core.lock() {
-                        // No http client: don't ask again.
-                        for id in pending {
-                            g.names.resolve(id, None);
-                        }
-                    }
-                    let c = core.clone();
-                    snap = tokio::task::spawn_blocking(move || {
-                        c.lock().unwrap_or_else(|e| e.into_inner()).compose(now)
-                    })
-                    .await
-                    .unwrap_or_default();
-                }
-
-                allowed = snap
-                    .playing
-                    .iter()
-                    .map(|p| p.appid)
-                    .chain(snap.recent.iter().map(|g| g.appid))
-                    .collect();
-                let key = snap.change_key();
-                let due = sent_at.is_none_or(|t| t.elapsed().as_secs() >= KEEPALIVE_S);
-                if last_key.as_ref() != Some(&key) || due {
-                    out.publish(KEY, snap.to_value());
-                    last_key = Some(key);
-                    sent_at = Some(Instant::now());
-                }
-                // Art after the JSON (see the module docs).
-                let req = core.lock().map(|g| g.art_request(&snap)).unwrap_or_default();
-                art_tx.send_if_modified(|cur| {
-                    if *cur == req {
-                        false
-                    } else {
-                        *cur = req;
-                        true
-                    }
-                });
             }
+            Some(event) = ev_rx.recv() => match event {
+                Event::Snapshot(snap, req) => {
+                    let key = snap.change_key();
+                    let due = sent_at.is_none_or(|t| t.elapsed().as_secs() >= KEEPALIVE_S);
+                    if last_key.as_ref() != Some(&key) || due {
+                        out.publish(KEY, snap.to_value());
+                        last_key = Some(key);
+                        sent_at = Some(Instant::now());
+                    }
+                    // Art after the JSON (see the module docs).
+                    art_tx.send_if_modified(|cur| {
+                        if *cur == *req {
+                            false
+                        } else {
+                            *cur = *req;
+                            true
+                        }
+                    });
+                }
+                Event::NeedLeague(args) => {
+                    if !league_busy.swap(true, Ordering::SeqCst) {
+                        let (tx, busy) = (cmd_tx.clone(), league_busy.clone());
+                        tokio::spawn(async move {
+                            let mode = league_mode(args).await;
+                            let _ = tx.send(Cmd::League { mode, now: now_secs() });
+                            busy.store(false, Ordering::SeqCst);
+                        });
+                    }
+                }
+                Event::NeedNames(ids) => {
+                    let (tx, client) = (cmd_tx.clone(), client.clone());
+                    tokio::spawn(async move {
+                        let mut found = Vec::new();
+                        for id in ids {
+                            let name = match &client {
+                                Some(c) => store_name(c, id).await,
+                                None => None,
+                            };
+                            found.push((id, name));
+                        }
+                        let _ = tx.send(Cmd::Names(found));
+                    });
+                }
+            },
             msg = incoming.recv(), if incoming_open => match msg {
                 Ok(Incoming::SteamLaunch { appid }) => {
                     if let Ok(appid) = u32::try_from(appid) {
-                        let c = core.clone();
-                        let ok = allowed.clone();
-                        let _ = tokio::task::spawn_blocking(move || launch(&c, &ok, appid)).await;
+                        let _ = cmd_tx.send(Cmd::Launch(appid));
                     }
                 }
                 Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -1605,9 +1702,9 @@ mod tests {
 
     #[test]
     fn launch_only_known_games() {
-        let core = Mutex::new(Core::new());
-        let allowed: HashSet<u32> = [570].into();
-        assert!(!launch(&core, &allowed, 730)); // not in the last snapshot: refused
-        assert!(!launch(&core, &allowed, 570)); // allowed, but this host can't open it
+        let mut core = Core::new();
+        core.allowed = [570].into();
+        assert!(!launch(&core, 730)); // not in the last snapshot: refused
+        assert!(!launch(&core, 570)); // allowed, but this host can't open it
     }
 }

@@ -562,7 +562,17 @@ impl Tracker {
         self.save(now);
     }
 
-    /// Save the history now (also on shutdown paths).
+    /// The service is stopping: add the running game's session and save.
+    pub fn finish(&mut self, now: f64) {
+        if self.running != 0 {
+            self.stop(now);
+            self.running = 0;
+        } else {
+            self.save(now);
+        }
+    }
+
+    /// Save the history now.
     pub fn save(&mut self, now: f64) {
         self.saved_at = now;
         let Some(path) = &self.state_file else { return };

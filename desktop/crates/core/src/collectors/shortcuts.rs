@@ -461,6 +461,8 @@ mod sys {
                 | VK_LWIN
                 | VK_APPS
                 | VK_SNAPSHOT
+                // Volume and media keys (0xAD-0xB3) send E0-prefixed scancodes too.
+                | 0xAD..=0xB3
         )
     }
 

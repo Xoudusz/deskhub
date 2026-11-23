@@ -100,6 +100,14 @@ function renderNav() {
 }
 
 async function save(patch: SettingsPatch) {
+  // Apply locally first (same one-level merge as Rust merge_patch), so a second edit
+  // before the reply builds on this one instead of reverting it.
+  const local = S as unknown as Record<string, unknown>;
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    const cur = local[k];
+    local[k] = v && typeof v === "object" && !Array.isArray(v) && cur && typeof cur === "object"
+      ? { ...(cur as object), ...(v as object) } : v;
+  }
   try {
     S = await api.setSettings(patch);
   } catch (err) {
