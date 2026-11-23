@@ -1716,6 +1716,8 @@ mod tests {
         let mut core = Core::new();
         core.allowed = [570].into();
         assert!(!launch(&core, 730)); // not in the last snapshot: refused
+        // Allowed: on Windows this really opens steam://, so only check refusal elsewhere.
+        #[cfg(not(windows))]
         assert!(!launch(&core, 570)); // allowed, but this host can't open it
     }
 }
