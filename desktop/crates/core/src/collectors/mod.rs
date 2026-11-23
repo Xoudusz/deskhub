@@ -13,7 +13,9 @@ pub mod ai;
 pub mod alerts;
 pub mod media;
 pub mod power;
+pub mod shortcuts;
 pub mod stats;
+pub mod steam;
 
 /// What a collector task gets: where to publish, the live settings, board commands.
 pub struct Ctx {
@@ -39,4 +41,6 @@ pub fn start_all(handle: &ServiceHandle) {
     tokio::spawn(power::run(Ctx::new(handle)));
     tokio::spawn(ai::run(Ctx::new(handle)));
     tokio::spawn(alerts::run(Ctx::new(handle)));
+    tokio::spawn(shortcuts::run(Ctx::new(handle)));
+    tokio::spawn(steam::run(Ctx::new(handle)));
 }

@@ -49,6 +49,18 @@ type Settings = {
     alerts: boolean;             // "Claude is waiting" alerts, default true
     idle_alert_seconds: number;  // default 30
   };
+  tiles: {                       // Shortcuts page, max 16; default = config.example.toml tiles
+    label: string; icon: string; color: string;   // icon: a board icon name, color "#rrggbb"
+    action: "keys" | "run" | "open" | "media" | "volume" | "lock" | "mic";
+    target: string;
+    state: "mic_mute" | "speaker_mute" | "" | null;  // null = guess, "" = never lit
+  }[];
+  games: {
+    steam: boolean;              // default true
+    presets: boolean;            // popular non-Steam games, default true
+    presets_disabled: string[];
+    custom: { name: string; process: string[]; match: string; title: string; image: string; launch: string }[];
+  };
   imported: boolean;             // config.toml already imported once
 };
 

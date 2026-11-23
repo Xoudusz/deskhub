@@ -26,6 +26,8 @@ export type Settings = {
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
+  tiles: Tile[];
+  games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   imported: boolean;
 };
 
@@ -64,6 +66,49 @@ export const HOME_SIZES: Record<Widget, { w: [number, number]; h: [number, numbe
   net: { w: [1, 5], h: [1, 1] },
   github: { w: [2, 5], h: [1, 2] },
 };
+
+/** A shortcut tile. state: null = guess, "" = never lit, or a Windows state. */
+export type Tile = { label: string; icon: string; color: string; action: TileAction; target: string; state: string | null };
+export type TileAction = "keys" | "run" | "open" | "media" | "volume" | "lock" | "mic";
+/** A non-Steam game the companion watches. */
+export type CustomGame = { name: string; process: string[]; match: string; title: string; image: string; launch: string };
+
+export const MAX_TILES = 16;
+/** The example tiles (settings.rs default_tiles). */
+export const EXAMPLE_TILES: Tile[] = [
+  { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
+  { label: "Mute sound", icon: "volume_off", color: "#3a4256", action: "volume", target: "mute", state: null },
+  { label: "Vol -", icon: "volume_down", color: "#3a4256", action: "volume", target: "down", state: null },
+  { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
+  { label: "Screenshot", icon: "screenshot_monitor", color: "#2f6f5e", action: "keys", target: "win+shift+s", state: null },
+  { label: "Terminal", icon: "terminal", color: "#2b2f3a", action: "run", target: "wt.exe", state: null },
+  { label: "Downloads", icon: "folder", color: "#8a6d1f", action: "open", target: "~/Downloads", state: null },
+  { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
+];
+/** Icons the board has for tiles (config.example.toml). */
+export const TILE_ICONS = (
+  "home insights memory speed music_note event calendar_today wb_sunny cloud grid_view apps wifi computer " +
+  "desktop_windows play_arrow pause skip_next skip_previous volume_up volume_down volume_off mic mic_off lock " +
+  "photo_camera screenshot_monitor terminal code public folder keyboard power_settings_new schedule timer mail chat " +
+  "sports_esports rocket_launch bolt star favorite settings refresh dark_mode headphones videocam movie " +
+  "developer_board lan shuffle repeat"
+).split(" ");
+export const TILE_ACTIONS: [TileAction, string, string][] = [
+  ["keys", "Press keys", "e.g. ctrl+shift+m, win+shift+s, f13"],
+  ["run", "Run a program", "e.g. notepad.exe or code C:\\Code\\project"],
+  ["open", "Open file, folder or URL", "e.g. ~/Downloads or https://..."],
+  ["media", "Media control", "toggle, next or prev"],
+  ["volume", "Volume", "up, down or mute"],
+  ["lock", "Lock the PC", ""],
+  ["mic", "Mute microphone", ""],
+];
+/** Non-Steam games recognised without setup (companion/deskhub/game_presets.py). */
+export const GAME_PRESETS = [
+  "League of Legends", "Teamfight Tactics", "VALORANT", "Fortnite", "Rocket League", "Minecraft",
+  "Minecraft Bedrock", "Roblox", "Overwatch 2", "World of Warcraft", "Diablo IV", "Hearthstone", "StarCraft II",
+  "Call of Duty", "Genshin Impact", "Honkai: Star Rail", "Zenless Zone Zero", "Grand Theft Auto V", "Apex Legends",
+  "EA SPORTS FC", "The Sims 4", "Halo Infinite", "Escape from Tarkov", "osu!",
+];
 
 /** One Home block, in grid cells. */
 export type GridCell = { widget: string; x: number; y: number; w: number; h: number };
@@ -125,6 +170,13 @@ const mock: Settings = {
   },
   appearance: { theme: "midnight" },
   ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
+  tiles: [
+    { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
+    { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
+    { label: "Screenshot", icon: "screenshot_monitor", color: "#2f6f5e", action: "keys", target: "win+shift+s", state: null },
+    { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
+  ],
+  games: { steam: true, presets: true, presets_disabled: [], custom: [] },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };

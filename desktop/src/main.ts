@@ -8,10 +8,11 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
+  type Tile, type TileAction, type CustomGame, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 
-type SectionId = "status" | "display" | "pages" | "ai" | "appearance" | "connection" | "about";
+type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
 type Cell = Settings["home"]["grid"][number];
 
@@ -19,6 +20,8 @@ const SECTIONS: [SectionId, string, string][] = [
   ["status", "gauge", "Status"],
   ["display", "sun", "Display"],
   ["pages", "layout-grid", "Pages"],
+  ["shortcuts", "zap", "Shortcuts"],
+  ["games", "gamepad", "Games"],
   ["ai", "sparkles", "AI agents"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
@@ -148,6 +151,8 @@ function sectionHtml(): string {
     case "status": return statusHtml();
     case "display": return displayHtml();
     case "pages": return pagesHtml();
+    case "shortcuts": return shortcutsHtml();
+    case "games": return gamesHtml();
     case "ai": return aiHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
@@ -351,6 +356,93 @@ function deletePreset() {
   void save({ home: { presets: S.home.presets.filter((_, j) => j !== i) } });
 }
 
+// ---- Shortcuts: tile list + editor for the selected tile ----
+let selTile = 0;
+
+function saveTiles(tiles: Tile[]) {
+  void save({ tiles });
+}
+
+function shortcutsHtml(): string {
+  const tiles = S.tiles;
+  if (selTile >= tiles.length) selTile = Math.max(0, tiles.length - 1);
+  const list = tiles.map((t, i) =>
+    `<button type="button" class="tile${i === selTile ? " sel" : ""}" data-act="tile-select" data-idx="${i}" style="--tc:${esc(t.color)}">` +
+    `<span>${esc(t.label || "(no label)")}</span><small>${esc(TILE_ACTIONS.find(a => a[0] === t.action)?.[1] ?? t.action)}</small></button>`,
+  ).join("");
+  const add = tiles.length < MAX_TILES
+    ? `<button type="button" class="tile add" data-act="tile-add">${icon("plus", 14)}Add</button>` : "";
+  const grid = card("Tiles", `The Shortcuts page on the board. Up to ${MAX_TILES}; 2, 4, 6, 8, 12 or 16 fill an even grid.`,
+    `<div class="tiles">${list}${add}</div>` +
+    row("Reset", `<button type="button" data-act="tiles-reset">${icon("refresh-cw", 13)}Example tiles</button>`,
+      "Mic, sound, volume, screenshot, terminal, downloads, lock"));
+  const t = tiles[selTile];
+  if (!t) return grid;
+  const act = TILE_ACTIONS.find(a => a[0] === t.action) ?? TILE_ACTIONS[0];
+  const needsTarget = !["lock", "mic"].includes(t.action);
+  const stateVal = t.state === null ? "auto" : t.state === "" ? "none" : t.state;
+  const editor = card(`Tile ${selTile + 1}`, "Changes apply right away", [
+    row("Label", `<input class="txt" data-k="tileLabel" value="${esc(t.label)}" maxlength="30" spellcheck="false">`),
+    row("Icon", select(`data-k="tileIcon"`, TILE_ICONS.map(n => [n, n.replace(/_/g, " ")] as [string, string]), t.icon)),
+    row("Colour", `<input type="color" class="color" data-k="tileColor" value="${esc(t.color)}">`),
+    row("Action", select(`data-k="tileAction"`, TILE_ACTIONS.map(a => [a[0], a[1]] as [string, string]), t.action)),
+    ...(needsTarget ? [row("Target", `<input class="txt" data-k="tileTarget" value="${esc(t.target)}" spellcheck="false">`, esc(act[2]))] : []),
+    row("Lights up", select(`data-k="tileState"`, [["auto", "Automatic"], ["mic_mute", "While the mic is muted"],
+      ["speaker_mute", "While the sound is muted"], ["none", "Never"]], stateVal)),
+    row("Position",
+      `<span class="updown">` +
+      `<button type="button" class="ib" data-act="tile-move" data-d="-1" title="Move left"${selTile === 0 ? " disabled" : ""}>${icon("chevron-up", 12)}</button>` +
+      `<button type="button" class="ib" data-act="tile-move" data-d="1" title="Move right"${selTile === tiles.length - 1 ? " disabled" : ""}>${icon("chevron-down", 12)}</button></span>` +
+      `<button type="button" data-act="tile-remove">${icon("x", 13)}Remove</button>`),
+  ].join(""));
+  return grid + editor;
+}
+
+function tilePatch(change: Partial<Tile>) {
+  saveTiles(S.tiles.map((t, i) => (i === selTile ? { ...t, ...change } : t)));
+}
+
+// ---- Games: Steam, presets, your own games ----
+let selGame = -1;
+
+function gamesHtml(): string {
+  const g = S.games;
+  const sources = card("Sources", "What the board's Games page shows", [
+    row("Steam", tgl(`data-k="gamesSteam"`, g.steam), "Playing now, recent games and launching them. Needs Steam installed"),
+    row("Popular games", tgl(`data-k="gamesPresets"`, g.presets), "League, VALORANT, Fortnite, Minecraft and more, without setup"),
+  ].join(""));
+  const presets = g.presets
+    ? card("Popular games", "Turn off the ones you don't want",
+      GAME_PRESETS.map(n => row(esc(n), tgl(`data-k="presetGame" data-name="${esc(n)}"`, !g.presets_disabled.includes(n)))).join(""))
+    : "";
+  const list = g.custom.map((c, i) =>
+    row(esc(c.name || "(no name)"),
+      `<button type="button" data-act="game-edit" data-idx="${i}">${icon(i === selGame ? "chevron-up" : "chevron-down", 13)}${i === selGame ? "Close" : "Edit"}</button>` +
+      `<button type="button" class="ib" data-act="game-remove" data-idx="${i}" title="Remove">${icon("x", 12)}</button>`,
+      esc(c.process.join(", ") || c.title)) + (i === selGame ? gameEditor(c) : "")).join("");
+  const own = card("Your games", "Games that aren't on Steam: found by program name or window title",
+    (list || text("None yet.")) +
+    row("Add a game", `<button type="button" data-act="game-add">${icon("plus", 13)}Add</button>`));
+  return sources + own + presets;
+}
+
+function gameEditor(c: CustomGame): string {
+  const f = (k: string, label: string, v: string, hint: string) =>
+    row(label, `<input class="txt" data-k="${k}" value="${esc(v)}" spellcheck="false">`, hint);
+  return `<div class="gedit">` + [
+    f("gameName", "Name", c.name, "Shown on the board; a popular game's name replaces it"),
+    f("gameProcess", "Program", c.process.join(", "), "File name from Task Manager > Details, e.g. javaw.exe (comma for several)"),
+    f("gameMatch", "Command line has", c.match, "Optional, e.g. minecraft for javaw.exe"),
+    f("gameTitle", "Window title has", c.title, "Optional; with a title the program is optional"),
+    f("gameImage", "Picture", c.image, "Optional: a picture file"),
+    f("gameLaunch", "Start with", c.launch, "Optional: a program, shortcut, folder or URL"),
+  ].join("") + `</div>`;
+}
+
+function gamePatch(change: Partial<CustomGame>) {
+  void save({ games: { custom: S.games.custom.map((c, i) => (i === selGame ? { ...c, ...change } : c)) } });
+}
+
 // Claude Code wiring, fetched when the AI section opens.
 let claude: ClaudeState | null = null;
 let claudeNote = "";
@@ -466,6 +558,37 @@ async function act(el: HTMLElement) {
     case "preset-delete": deletePreset(); return;
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
+    case "tile-select": selTile = Number(el.dataset.idx); render(true); return;
+    case "tile-add": {
+      const tiles = [...S.tiles, { label: "New tile", icon: "apps", color: "#2b2f3a", action: "keys" as TileAction, target: "", state: null }];
+      selTile = tiles.length - 1;
+      saveTiles(tiles);
+      return;
+    }
+    case "tile-remove": saveTiles(S.tiles.filter((_, i) => i !== selTile)); return;
+    case "tile-move": {
+      const to = selTile + Number(el.dataset.d);
+      if (to < 0 || to >= S.tiles.length) return;
+      const tiles = [...S.tiles];
+      [tiles[selTile], tiles[to]] = [tiles[to], tiles[selTile]];
+      selTile = to;
+      saveTiles(tiles);
+      return;
+    }
+    case "tiles-reset": selTile = 0; saveTiles(EXAMPLE_TILES.map(t => ({ ...t }))); return;
+    case "game-edit": { const i = Number(el.dataset.idx); selGame = selGame === i ? -1 : i; render(true); return; }
+    case "game-remove": {
+      const i = Number(el.dataset.idx);
+      selGame = -1;
+      void save({ games: { custom: S.games.custom.filter((_, j) => j !== i) } });
+      return;
+    }
+    case "game-add": {
+      const custom = [...S.games.custom, { name: "", process: [], match: "", title: "", image: "", launch: "" }];
+      selGame = custom.length - 1;
+      void save({ games: { custom } });
+      return;
+    }
     case "step": stepSlider(el.dataset.slider as SliderKey, Number(el.dataset.d)); return;
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
@@ -541,6 +664,26 @@ main.addEventListener("change", e => {
     case "homeHeader":
       void save({ home: { header: on } });
       return;
+    case "tileLabel": tilePatch({ label: t.value.slice(0, 30) }); return;
+    case "tileIcon": tilePatch({ icon: t.value }); return;
+    case "tileColor": tilePatch({ color: t.value }); return;
+    case "tileAction": tilePatch({ action: t.value as TileAction, target: "" }); return;
+    case "tileTarget": tilePatch({ target: t.value.trim() }); return;
+    case "tileState": tilePatch({ state: t.value === "auto" ? null : t.value === "none" ? "" : t.value }); return;
+    case "gamesSteam": void save({ games: { steam: on } }); return;
+    case "gamesPresets": void save({ games: { presets: on } }); return;
+    case "presetGame": {
+      const n = t.dataset.name ?? "";
+      const off = S.games.presets_disabled.filter(x => x !== n);
+      void save({ games: { presets_disabled: on ? off : [...off, n] } });
+      return;
+    }
+    case "gameName": gamePatch({ name: t.value.trim() }); return;
+    case "gameProcess": gamePatch({ process: t.value.split(",").map(p => p.trim()).filter(Boolean) }); return;
+    case "gameMatch": gamePatch({ match: t.value.trim() }); return;
+    case "gameTitle": gamePatch({ title: t.value.trim() }); return;
+    case "gameImage": gamePatch({ image: t.value.trim() }); return;
+    case "gameLaunch": gamePatch({ launch: t.value.trim() }); return;
     case "homePreset":
       presetSel = t.value;
       render(true);
