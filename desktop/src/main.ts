@@ -565,6 +565,8 @@ async function updateFirmware() {
 function aboutHtml(): string {
   return card("Desk Hub", "Board companion for Windows", [
     row("Version", `<span>${esc(version)}</span>`, TAURI ? esc(aboutUpdate) : ""),
+    TAURI ? row("Updates", `<button type="button" data-act="update-check"${updChecking ? " disabled" : ""}>${icon("refresh-cw", 13)}Check now</button>`,
+      "New versions download in the background; the button at the top installs them") : "",
     text("Replaces the Python companion for media, PC stats, Claude usage, shortcuts and games."),
     text("Calendar, printers, internet and GitHub still need the Python companion. Don't run both at once."),
   ].join(""));
@@ -650,6 +652,7 @@ async function act(el: HTMLElement) {
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
     case "import": await importConfig(); return;
+    case "update-check": checkUpdates(); return;
     case "firmware": await updateFirmware(); return;
     case "game-image": {
       const path = await api.pickImage();
@@ -815,17 +818,25 @@ async function startUpdates() {
   if (!TAURI) return;
   const btn = document.getElementById("updBtn") as HTMLButtonElement;
   const { startUpdater } = await import("./update");
-  const up = startUpdater(s => {
+  const up = await startUpdater(s => {
     btn.hidden = !s.ready && !s.installing;
     btn.disabled = s.installing;
-    btn.textContent = s.installing ? "Installing..." : `Update to ${s.available?.version ?? ""}`;
+    btn.textContent = s.installing ? "Installing..." : `Update to ${s.version ?? ""}`;
     btn.title = s.error ?? "Installs the new version and restarts Desk Hub";
-    aboutUpdate = s.ready ? `Version ${s.available?.version} is ready: use the button at the top.` : s.error ? `Update check failed: ${s.error}` : "Up to date";
+    const when = s.checked ? ` (checked ${new Date(s.checked * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})` : "";
+    aboutUpdate = s.checking ? "Checking for updates..."
+      : s.ready ? `Version ${s.version} is ready: use the button at the top.`
+      : s.error ? `Update check failed: ${s.error}`
+      : s.checked ? `Up to date${when}` : "Checks every 10 minutes";
+    updChecking = s.checking;
     if (section === "about") render(true);
   });
+  checkUpdates = () => void up.check();
   btn.addEventListener("click", () => void up.install());
 }
-let aboutUpdate = "Checking...";
+let aboutUpdate = "Checks every 10 minutes";
+let updChecking = false;
+let checkUpdates: () => void = () => undefined;
 
 async function boot() {
   fillIcons(document);

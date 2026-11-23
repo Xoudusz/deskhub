@@ -4,6 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod updates;
+
 use deskhub_core::claude_install;
 use deskhub_core::http;
 use deskhub_core::session::{Service, ServiceHandle};
@@ -356,6 +358,8 @@ pub fn run() {
                 service,
                 status: Mutex::new(status),
             });
+            app.manage(updates::Updates::default());
+            updates::spawn_loop(handle.clone());
 
             // Forward every status change to the frontend (App is managed by now).
             if let Some(mut rx) = status_rx {
@@ -425,7 +429,10 @@ pub fn run() {
             board_firmware,
             import_config,
             claude_status,
-            claude_connect
+            claude_connect,
+            updates::update_status,
+            updates::update_check,
+            updates::update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building Desk Hub")

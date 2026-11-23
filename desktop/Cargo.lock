@@ -861,7 +861,7 @@ dependencies = [
 
 [[package]]
 name = "deskhub-desktop"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "deskhub-core",
  "log",
@@ -875,6 +875,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tokio",
  "windows-sys 0.59.0",
 ]
 
