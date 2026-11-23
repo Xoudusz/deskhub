@@ -21,7 +21,7 @@ Commands (`invoke`):
 | `get_status` | – | `Status` |
 | `board_screenshot` | – | `string`: PNG as a `data:image/png;base64,...` URL (800x480) |
 | `board_tap` | `{ x: number, y: number }` (board pixels, 0-799 / 0-479) | `null` |
-| `import_config` | `{ path?: string }` (default: search like the Python companion) | `Settings` |
+| `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):
 
