@@ -54,4 +54,39 @@ menu "Desk Hub"
         help
             Any touch, or new media starting, turns it back on.
 
+    config HUB_ROTATION_270
+        bool "Turn the picture the other way round (ESP32-P4 board)"
+        depends on IDF_TARGET_ESP32P4
+        default n
+        help
+            The ESP32-P4 board's panel is portrait and the dashboard is turned
+            90 degrees onto it. Set this if the picture is upside down.
+            Touch follows the picture.
+
+    config HUB_TOUCH_ROTATE_180
+        bool "Turn touch input 180 degrees (ESP32-P4 board)"
+        depends on IDF_TARGET_ESP32P4
+        default n
+        help
+            Set this only if taps land on the opposite corner of the screen
+            while the picture is the right way up.
+
+endmenu
+
+# esp_hosted 3.x gates optional USB dependencies on these options. The solver
+# reads those rules before settling on the pinned esp_hosted 1.4.x, which does
+# not define them, and configure then fails with "Missing required kconfig
+# option". Defining them here (0) lets the rules evaluate to false. They need a
+# prompt: Kconfig leaves hidden symbols out of sdkconfig.
+menu "Desk Hub: ESP32-P4 Wi-Fi build fix"
+    depends on IDF_TARGET_ESP32P4
+    config ESP_HOSTED_HOST_USB_CDC_ACM_MANIFEST
+        int "Leave at 0 (esp_hosted USB CDC-ACM)"
+        default 0
+    config ESP_HOSTED_HOST_USB_CHERRYUSB_MANIFEST
+        int "Leave at 0 (esp_hosted CherryUSB)"
+        default 0
+    config ESP_HOSTED_HOST_USB_RNDIS_MANIFEST
+        int "Leave at 0 (esp_hosted USB RNDIS)"
+        default 0
 endmenu

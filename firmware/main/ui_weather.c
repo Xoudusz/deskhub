@@ -94,8 +94,14 @@ void weather_page_refresh(void)
     lv_label_set_text(s_cond, weather_text(w->code));
 
     ui_fmt_temp(a, sizeof(a), w->feels);
+    // CONFIG_HUB_FAHRENHEIT is undefined when off, so test it with #if.
+#if CONFIG_HUB_FAHRENHEIT
+    const char *wind_unit = "mph";
+#else
+    const char *wind_unit = "km/h";
+#endif
     snprintf(buf, sizeof(buf), "Feels like %s\nHumidity %d%%\nWind %d %s", a, w->humidity, (int)(w->wind + 0.5f),
-             CONFIG_HUB_FAHRENHEIT ? "mph" : "km/h");
+             wind_unit);
     lv_label_set_text(s_details, buf);
     ui_fmt_clock(a, sizeof(a), w->fetched);
     snprintf(buf, sizeof(buf), "Updated %s", a);

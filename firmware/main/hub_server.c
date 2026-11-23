@@ -8,7 +8,6 @@
 
 #include "board.h"
 #include "cJSON.h"
-#include "esp_lcd_panel_rgb.h"
 #include "display.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
@@ -291,6 +290,11 @@ static void on_layout(const cJSON *m)
         copy_str(style, sizeof(style), m, "night_style");
         display_set_night((int)get_num(m, "night_start", -1), (int)get_num(m, "night_end", -1),
                           strcmp(style, "clock") == 0 ? PC_SLEEP_CLOCK : PC_SLEEP_OFF);
+    }
+    // Backlight in percent: "brightness" by day (1-100), "night_brightness" during
+    // night mode (0 = go dark as before). Only boards with a dimmable backlight dim.
+    if (cJSON_GetObjectItemCaseSensitive(m, "brightness")) {
+        display_set_brightness((int)get_num(m, "brightness", 100), (int)get_num(m, "night_brightness", 0));
     }
 }
 
@@ -668,13 +672,11 @@ static esp_err_t screenshot_handler(httpd_req_t *req)
     size_t fb_bytes = (size_t)W * H * 2;
     uint16_t *copy = heap_caps_malloc(fb_bytes, MALLOC_CAP_SPIRAM);
     if (!copy) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
-    void *fb = NULL;
     // Copy under the LVGL lock so the frame isn't half-rendered.
     display_lock();
-    esp_lcd_rgb_panel_get_frame_buffer(board_panel(), 1, &fb);
-    if (fb) memcpy(copy, fb, fb_bytes);
+    bool ok = board_snapshot(copy);
     display_unlock();
-    if (!fb) {
+    if (!ok) {
         free(copy);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no frame buffer");
     }

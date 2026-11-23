@@ -594,9 +594,10 @@ def step_display(config_path: pathlib.Path):
         if mode in PC_SLEEP_MODES:
             break
         print("Type off, clock or none.")
-    from .pages import NIGHT_STYLES, night_schedule, night_style
+    from .pages import NIGHT_STYLES, brightness, night_brightness, night_schedule, night_style
 
     print("\nNight mode darkens the board on a schedule, PC or not (it keeps the hours itself).")
+    current_day_level, current_night_level = brightness(doc.unwrap()), night_brightness(doc.unwrap())
     night = night_schedule(doc.unwrap())
     current_night = f"{night[0] // 60:02d}:{night[0] % 60:02d}-{night[1] // 60:02d}:{night[1] % 60:02d}" if night else "off"
     while True:
@@ -611,11 +612,29 @@ def step_display(config_path: pathlib.Path):
             if style in NIGHT_STYLES:
                 break
             print("Type off or clock.")
-    if (mode, hours, style) != (current, current_night, night_style(doc.unwrap())) or "display" not in doc:
+    day_level, night_level = current_day_level, current_night_level
+    while True:
+        raw = ask("Day brightness (1-100), ESP32-P4 board only", str(day_level)).strip()
+        if raw.isdecimal() and 1 <= int(raw) <= 100:
+            day_level = int(raw)
+            break
+        print("Type a whole number from 1 to 100.")
+    if hours != "off":
+        while True:
+            raw = ask("Night brightness (0-100, 0 = screen off), ESP32-P4 board only", str(night_level)).strip()
+            if raw.isdecimal() and int(raw) <= 100:
+                night_level = int(raw)
+                break
+            print("Type a whole number from 0 to 100.")
+    if ((mode, hours, style, day_level, night_level)
+            != (current, current_night, night_style(doc.unwrap()), current_day_level, current_night_level)
+            or "display" not in doc):
         display = doc.get("display") or tomlkit.table()
         display["pc_sleep"] = mode
         display["night"] = "" if hours == "off" else hours
         display["night_style"] = style
+        display["brightness"] = day_level
+        display["night_brightness"] = night_level
         doc["display"] = display
         config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 

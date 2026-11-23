@@ -1,0 +1,18 @@
+# Copy to sdkconfig.local (git-ignored) and fill in. build.sh adds it to every
+# build. These are the same values `idf.py menuconfig` sets under "Desk Hub".
+CONFIG_HUB_WIFI_SSID="your-2.4GHz-network"
+CONFIG_HUB_WIFI_PASSWORD="your-wifi-password"
+# Same value as `token` in the companion's config.toml.
+CONFIG_HUB_TOKEN="change-me"
+CONFIG_HUB_HOSTNAME="deskhub"
+# POSIX time zone, for example CET-1CEST,M3.5.0,M10.5.0/3 for Central Europe.
+CONFIG_HUB_TZ="CET-1CEST,M3.5.0,M10.5.0/3"
+CONFIG_HUB_CITY="Vienna"
+CONFIG_HUB_LATITUDE="48.2082"
+CONFIG_HUB_LONGITUDE="16.3738"
+# CONFIG_HUB_FAHRENHEIT is not set
+CONFIG_HUB_24H=y
+
+# ESP32-P4 board only: flip these if the picture or touch is the wrong way round.
+# CONFIG_HUB_ROTATION_270=y
+# CONFIG_HUB_TOUCH_ROTATE_180=y

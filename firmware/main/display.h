@@ -23,6 +23,10 @@ void display_set_pc_asleep(bool asleep);
 // end_min (minutes after midnight, may cross midnight); start_min -1 turns it off.
 // Saved to NVS so it works without the PC.
 void display_set_night(int start_min, int end_min, int mode);
+// Backlight level: day_pct (1-100) normally, night_pct during night mode.
+// night_pct 0 keeps the night style (dark or clock); above 0 the board stays on,
+// dimmed, and a "clock" night style shows the clock dimmed. Kept on the board.
+void display_set_brightness(int day_pct, int night_pct);
 
 // Simulate a short tap at (x, y), for remote testing.
 void display_inject_tap(uint16_t x, uint16_t y);

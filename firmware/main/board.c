@@ -1,5 +1,6 @@
 #include "board.h"
 
+#include <string.h>
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_check.h"
@@ -148,6 +149,25 @@ void board_backlight(bool on)
     if (exio_set(v) != ESP_OK) {
         ESP_LOGW(TAG, "backlight write failed");
     }
+}
+
+void board_backlight_set(uint8_t pct)
+{
+    // The 4.3B switches its backlight through the I/O expander: on or off only.
+    (void)pct;
+}
+
+bool board_has_dimming(void)
+{
+    return false;
+}
+
+bool board_snapshot(uint16_t *dst)
+{
+    void *fb = NULL;
+    if (esp_lcd_rgb_panel_get_frame_buffer(s_panel, 1, &fb) != ESP_OK || !fb) return false;
+    memcpy(dst, fb, (size_t)BOARD_WIDTH * BOARD_HEIGHT * 2);
+    return true;
 }
 
 static esp_err_t gt911_read(uint16_t reg, uint8_t *buf, size_t len)

@@ -99,6 +99,23 @@ def night_style(cfg: dict) -> str:
     return style if style in NIGHT_STYLES else "off"
 
 
+def _whole_in_range(value, lo: int, hi: int, default: int) -> int:
+    """A whole number clamped to lo..hi; anything that is not an int gives default."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return max(lo, min(hi, value))
+
+
+def brightness(cfg: dict) -> int:
+    """[display] brightness = 1-100 (default 100): the screen level by day."""
+    return _whole_in_range((cfg.get("display") or {}).get("brightness", 100), 1, 100, 100)
+
+
+def night_brightness(cfg: dict) -> int:
+    """[display] night_brightness = 0-100 (default 0): the level at night. 0 = dark, as before."""
+    return _whole_in_range((cfg.get("display") or {}).get("night_brightness", 0), 0, 100, 0)
+
+
 def layout_message(cfg: dict) -> dict:
     # The board restarts when "nav" changes, so it always gets one.
     night = night_schedule(cfg)
@@ -108,7 +125,8 @@ def layout_message(cfg: dict) -> dict:
             "pc_sleep": pc_sleep_mode(cfg),
             # Always sent, so removing the schedule turns night mode off on the board.
             "night_start": night[0] if night else -1, "night_end": night[1] if night else -1,
-            "night_style": night_style(cfg)}
+            "night_style": night_style(cfg),
+            "brightness": brightness(cfg), "night_brightness": night_brightness(cfg)}
 
 
 # Home screen widgets, placed in two columns top to bottom. "events" stretches to

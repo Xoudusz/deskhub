@@ -9,6 +9,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "draw/sw/lv_draw_sw.h"
 #include "nvs.h"
 #include <time.h>
 #include "sdkconfig.h"
@@ -28,6 +29,8 @@ static volatile int64_t s_inject_start_us;
 static bool s_pc_asleep;
 static int s_pc_mode = PC_SLEEP_OFF;
 #define DARK_WAKE_US (60LL * 1000000)   // how long a touch wakes the board while it is dark
+
+static void backlight_on(void);
 
 static uint32_t tick_ms(void)
 {
@@ -77,10 +80,25 @@ int64_t display_time_full_redraw(void)
     return esp_timer_get_time() - t0;
 }
 
+#if BOARD_ROTATED
+static uint8_t *s_rot_buf;   // the rendered area turned to the panel's orientation
+#endif
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *a, uint8_t *px)
 {
     s_pixels += lv_area_get_size(a);
-    // The RGB driver copies into its PSRAM frame buffer; this returns when done.
+#if BOARD_ROTATED
+    // LVGL renders the landscape UI; turn each area onto the portrait panel.
+    lv_area_t r = *a;
+    int32_t w = lv_area_get_width(a), h = lv_area_get_height(a);
+    lv_display_rotation_t rot = lv_display_get_rotation(disp);
+    lv_display_rotate_area(disp, &r);
+    lv_draw_sw_rotate(px, s_rot_buf, w, h, lv_draw_buf_width_to_stride(w, LV_COLOR_FORMAT_RGB565),
+                      lv_draw_buf_width_to_stride(h, LV_COLOR_FORMAT_RGB565), rot, LV_COLOR_FORMAT_RGB565);
+    a = &r;
+    px = s_rot_buf;
+#endif
+    // The panel driver copies into its frame buffer; this returns when done.
     esp_lcd_panel_draw_bitmap(board_panel(), a->x1, a->y1, a->x2 + 1, a->y2 + 1, px);
     lv_display_flush_ready(disp);
 }
@@ -89,6 +107,8 @@ static void touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     uint16_t x = 0, y = 0;
     bool down = board_touch_read(&x, &y);
+    bool injected = s_inject_until_us != 0;   // x/y below are UI coordinates
+    (void)injected;                           // only used on rotated panels
     if (esp_timer_get_time() < s_inject_until_us) {
         // A tap requested over the network (/tap) overrides the panel.
         down = true;
@@ -103,6 +123,17 @@ static void touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
         y = s_inject_y;
         if (!down) s_inject_until_us = 0;
     }
+#if BOARD_ROTATED
+    if (injected) {
+        board_logical_to_panel(x, y, &x, &y);
+    }
+#if CONFIG_HUB_TOUCH_ROTATE_180
+    else {
+        x = BOARD_PANEL_W - 1 - x;
+        y = BOARD_PANEL_H - 1 - y;
+    }
+#endif
+#endif
     data->point.x = x;
     data->point.y = y;
 
@@ -110,7 +141,7 @@ static void touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
         s_last_activity_us = esp_timer_get_time();
         if (!s_screen_on) {
             // First touch on a dark screen just turns it on.
-            board_backlight(true);
+            backlight_on();
             s_screen_on = true;
             s_swallow_touch = true;
         }
@@ -127,6 +158,9 @@ static int s_night_start = -1, s_night_end = -1;   // minutes after midnight; -1
 static int s_night_mode = PC_SLEEP_OFF;
 static int s_dark_mode = PC_SLEEP_NONE;            // what the board is doing now
 static int64_t s_dark_eval_us;                     // when that was last worked out
+static int s_bright = 100;                         // backlight % by day
+static int s_night_bright = 0;                     // backlight % at night; 0 = night style as before
+static int s_bright_now = -1;                      // what the backlight is set to
 
 static bool night_now(void)
 {
@@ -143,8 +177,34 @@ static bool night_now(void)
 static int dark_mode(void)
 {
     if (s_pc_asleep && s_pc_mode != PC_SLEEP_NONE) return s_pc_mode;
-    if (night_now()) return s_night_mode;
+    if (night_now()) {
+        // With a night brightness the board dims instead of going dark.
+        if (s_night_mode == PC_SLEEP_OFF && s_night_bright > 0 && board_has_dimming()) return PC_SLEEP_NONE;
+        return s_night_mode;
+    }
     return PC_SLEEP_NONE;
+}
+
+static int brightness_now(void)
+{
+    if (s_night_bright > 0 && night_now()) return s_night_bright;
+    return s_bright;
+}
+
+// Caller holds the display lock (or runs before the LVGL task starts).
+static void apply_brightness(void)
+{
+    int level = brightness_now();
+    if (level != s_bright_now) {
+        s_bright_now = level;
+        board_backlight_set((uint8_t)level);
+    }
+}
+
+static void backlight_on(void)
+{
+    apply_brightness();
+    board_backlight(true);
 }
 
 // Caller holds the display lock.
@@ -163,6 +223,7 @@ static void idle_check(void)
             s_dark_mode = mode;
             if (mode == PC_SLEEP_NONE && was != PC_SLEEP_NONE) display_wake();
         }
+        if (s_screen_on) apply_brightness();
     }
     int64_t idle = now - s_last_activity_us;
     if (s_dark_mode != PC_SLEEP_NONE && idle > DARK_WAKE_US) {
@@ -222,11 +283,14 @@ void display_inject_drag(uint16_t x, uint16_t y, uint16_t x2, int ms)
 
 void display_wake(void)
 {
+    // Called from other tasks too; the lock keeps the backlight state consistent.
+    display_lock();
     s_last_activity_us = esp_timer_get_time();
     if (!s_screen_on) {
-        board_backlight(true);
+        backlight_on();
         s_screen_on = true;
     }
+    display_unlock();
 }
 
 void display_set_pc_sleep_mode(int mode)
@@ -257,7 +321,34 @@ static void load_night(void)
         s_night_end = end;
         s_night_mode = mode;
     }
+    uint8_t day, night;
+    if (nvs_get_u8(h, "bright", &day) == ESP_OK && nvs_get_u8(h, "n_bright", &night) == ESP_OK) {
+        s_bright = day;
+        s_night_bright = night;
+    }
     nvs_close(h);
+}
+
+void display_set_brightness(int day_pct, int night_pct)
+{
+    if (day_pct < 1) day_pct = 1;
+    if (day_pct > 100) day_pct = 100;
+    if (night_pct < 0) night_pct = 0;
+    if (night_pct > 100) night_pct = 100;
+    display_lock();
+    bool same = day_pct == s_bright && night_pct == s_night_bright;
+    s_bright = day_pct;
+    s_night_bright = night_pct;
+    s_dark_eval_us = 0;   // re-check now
+    display_unlock();
+    if (same) return;
+    nvs_handle_t h;
+    if (nvs_open("hub", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "bright", (uint8_t)day_pct);
+        nvs_set_u8(h, "n_bright", (uint8_t)night_pct);
+        nvs_commit(h);
+        nvs_close(h);
+    }
 }
 
 void display_set_night(int start_min, int end_min, int mode)
@@ -291,9 +382,20 @@ esp_err_t display_start(void)
     lv_init();
     lv_tick_set_cb(tick_ms);
 
-    lv_display_t *disp = lv_display_create(BOARD_WIDTH, BOARD_HEIGHT);
+    lv_display_t *disp = lv_display_create(BOARD_PANEL_W, BOARD_PANEL_H);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     size_t buf_bytes = BOARD_WIDTH * DRAW_LINES * 2;
+#if BOARD_ROTATED
+    // LVGL keeps working in 800x480; touch points are rotated the same way.
+#if CONFIG_HUB_ROTATION_270
+    lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_270);
+#else
+    lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_90);
+#endif
+    s_rot_buf = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!s_rot_buf) s_rot_buf = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
+    if (!s_rot_buf) return ESP_ERR_NO_MEM;
+#endif
     // Rendering into internal RAM is much faster than into PSRAM.
     void *buf = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!buf) {

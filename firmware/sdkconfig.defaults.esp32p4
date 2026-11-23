@@ -1,0 +1,10 @@
+# Waveshare ESP32-P4-WIFI6-Touch-LCD-4.3. ESP-IDF loads this after sdkconfig.defaults
+# when the target is esp32p4. Values follow Waveshare's examples for this board.
+# The chip revision (v1.x or v3.x) comes from sdkconfig.p4rev1 / sdkconfig.p4rev3.
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+
+# Wi-Fi comes from the on-board ESP32-C6 over SDIO (esp_hosted + esp_wifi_remote).
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
