@@ -6,7 +6,7 @@ import "./styles.css";
 import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
-  api, win, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
+  api, win, TAURI, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
   type Tile, type TileAction, type CustomGame, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
@@ -513,7 +513,11 @@ async function toggleClaude() {
 }
 
 function appearanceHtml(): string {
-  return card("Theme", "Applies at once", row("Colour theme", select(`data-k="theme"`, THEMES, S.appearance.theme)));
+  return card("Theme", "Applies at once", [
+    row("Colour theme", select(`data-k="theme"`, THEMES, S.appearance.theme)),
+    row("Use on the board", tgl(`data-k="boardTheme"`, S.appearance.board),
+      S.appearance.board ? "The board takes these colours; it restarts once when they change" : "The board keeps its classic amber look"),
+  ].join(""));
 }
 
 function connectionHtml(): string {
@@ -557,7 +561,7 @@ async function updateFirmware() {
 
 function aboutHtml(): string {
   return card("Desk Hub", "Board companion for Windows", [
-    row("Version", `<span>${esc(version)}</span>`),
+    row("Version", `<span>${esc(version)}</span>`, TAURI ? esc(aboutUpdate) : ""),
     text("Replaces the Python companion for media, PC stats, Claude usage, shortcuts and games."),
     text("Calendar, printers, internet and GitHub still need the Python companion. Don't run both at once."),
   ].join(""));
@@ -740,6 +744,7 @@ main.addEventListener("change", e => {
     case "gameTitle": gamePatch({ title: t.value.trim() }); return;
     case "gameImage": gamePatch({ image: t.value.trim() }); return;
     case "gameLaunch": gamePatch({ launch: t.value.trim() }); return;
+    case "boardTheme": void save({ appearance: { board: on } }); return;
     case "homePreset":
       presetSel = t.value;
       render(true);
@@ -800,6 +805,23 @@ document.getElementById("grip")?.addEventListener("mousedown", e => {
   void win.startResize();
 });
 
+/** App updates (update.ts): the title bar button shows once a new version is downloaded. */
+async function startUpdates() {
+  if (!TAURI) return;
+  const btn = document.getElementById("updBtn") as HTMLButtonElement;
+  const { startUpdater } = await import("./update");
+  const up = startUpdater(s => {
+    btn.hidden = !s.ready && !s.installing;
+    btn.disabled = s.installing;
+    btn.textContent = s.installing ? "Installing..." : `Update to ${s.available?.version ?? ""}`;
+    btn.title = s.error ?? "Installs the new version and restarts Desk Hub";
+    aboutUpdate = s.ready ? `Version ${s.available?.version} is ready: use the button at the top.` : s.error ? `Update check failed: ${s.error}` : "Up to date";
+    if (section === "about") render(true);
+  });
+  btn.addEventListener("click", () => void up.install());
+}
+let aboutUpdate = "Checking...";
+
 async function boot() {
   fillIcons(document);
   S = await api.getSettings();
@@ -809,6 +831,7 @@ async function boot() {
   setDot();
   renderNav();
   render(true);
+  void startUpdates();
   await onStatus(s => {
     st = s;
     setDot();

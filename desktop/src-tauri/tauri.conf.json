@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Desk Hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "org.xoudusz.deskhub",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -36,6 +36,14 @@
     "shortDescription": "Companion app for the Desk Hub board",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "windows": { "nsis": { "installMode": "currentUser" } },
-    "externalBin": ["binaries/deskhub-cli"]
+    "externalBin": ["binaries/deskhub-cli"],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZFMzU4QTg4OEFBMzczQTEKUldTaGM2T0tpSW8xYm8zSm5VVWdKTE44VGp1eFF3dDVxckcwbjNhNHdlcXV0bjZGc2o4OVVDUTUK",
+      "endpoints": ["https://github.com/Xoudusz/deskhub/releases/download/desktop-latest/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
   }
 }

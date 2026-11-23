@@ -301,6 +301,27 @@ static void on_layout(const cJSON *m)
     }
 }
 
+// Colour palette: {"type":"theme","bg":N,"rail":N,"card":N,"card_hi":N,"border":N,"pressed":N,
+// "text":N,"muted":N,"dim":N,"accent":N,"on_accent":N,"accent_pressed":N}, N = 0xRRGGBB as a
+// number. A missing key keeps the default for that slot. A changed palette is saved and the
+// board restarts; an identical one is ignored (the app sends it on every connect).
+static void on_theme(const cJSON *m)
+{
+    hub_theme_t d;
+    ui_theme_defaults(&d);
+    uint32_t *f[] = {&d.bg, &d.rail, &d.card, &d.card_hi, &d.border, &d.pressed,
+                     &d.text, &d.muted, &d.dim, &d.accent, &d.on_accent, &d.accent_pressed};
+    static const char *keys[] = {"bg", "rail", "card", "card_hi", "border", "pressed",
+                                 "text", "muted", "dim", "accent", "on_accent", "accent_pressed"};
+    for (int i = 0; i < 12; i++) {
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(m, keys[i]);
+        if (cJSON_IsNumber(v) && v->valuedouble >= 0 && v->valuedouble <= 0xffffff) *f[i] = (uint32_t)v->valuedouble;
+    }
+    display_lock();
+    ui_set_theme(&d);   // restarts when different
+    display_unlock();
+}
+
 // The PC's display went to sleep or woke: {"type":"pc_power","asleep":true}.
 static void on_pc_power(const cJSON *m)
 {
@@ -560,6 +581,7 @@ static void on_text(int fd, char *text)
         else if (strcmp(type, "printer") == 0) on_printer(m);
         else if (strcmp(type, "layout") == 0) on_layout(m);
         else if (strcmp(type, "pc_power") == 0) on_pc_power(m);
+        else if (strcmp(type, "theme") == 0) on_theme(m);
         else if (strcmp(type, "home") == 0) on_home(m);
         else if (strcmp(type, "alert") == 0) on_alert(m);
         else if (strcmp(type, "tile_state") == 0) on_tile_state(m);

@@ -24,7 +24,7 @@ export type Settings = {
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board: boolean };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
@@ -149,7 +149,7 @@ export const BUILTIN_PRESETS: HomePreset[] = [
 export const GRID_COLS = 5;
 export const GRID_ROWS = 3;
 
-const TAURI = (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== undefined;
+export const TAURI = (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== undefined;
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -168,7 +168,7 @@ const mock: Settings = {
     ],
     presets: [],
   },
-  appearance: { theme: "midnight" },
+  appearance: { theme: "midnight", board: true },
   ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
   tiles: [
     { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },

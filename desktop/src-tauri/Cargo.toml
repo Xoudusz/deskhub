@@ -1,6 +1,6 @@
 [package]
 name = "deskhub-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Desk Hub desktop app"
 edition = "2021"
 publish = false
@@ -20,6 +20,8 @@ tauri-plugin-autostart = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde_json = "1"
 log = "0.4"
 

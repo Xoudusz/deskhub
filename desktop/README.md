@@ -42,7 +42,7 @@ type Settings = {
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };   // order = navigation order
   home: {
     presets: { name: string; header: boolean; grid: GridCell[] }[];  // user-saved layouts header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };   // default midnight
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board: boolean };   // default midnight; board: send its palette ("theme" message), default true
   ai: {
     agent: "auto" | "claude" | "codex";   // auto = most recently used
     live_limits: boolean;        // opt-in Anthropic usage endpoint, default false
@@ -85,3 +85,18 @@ cargo build --release -p deskhub-cli
 New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
 Copy-Item target/release/deskhub-cli.exe src-tauri/binaries/deskhub-cli-x86_64-pc-windows-msvc.exe
 ```
+
+## Releases and app updates
+
+Installed apps update themselves from GitHub Releases (Tauri updater, signed). To publish:
+
+1. Bump `version` in `src-tauri/tauri.conf.json` (and `src-tauri/Cargo.toml`).
+2. Commit, then tag and push: `git tag desktop-vX.Y.Z && git push origin desktop-vX.Y.Z`.
+
+`.github/workflows/desktop-release.yml` builds the signed installer into release `desktop-vX.Y.Z` and copies
+`latest.json` to the fixed release `desktop-latest`, which the app checks every 10 minutes. The app downloads the
+new version in the background and shows "Update to X.Y.Z" in the title bar.
+
+Signing key: `~/.tauri/deskhub.key` on vibecode (public key in `tauri.conf.json`), stored as repo secrets
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (empty). Losing the key means installed apps
+can't verify new versions: keep a backup.

@@ -313,10 +313,21 @@ impl Default for GridItem {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
     pub theme: Theme,
+    /// The board uses the app theme's colours (false: the board's classic amber look).
+    pub board: bool,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            board: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

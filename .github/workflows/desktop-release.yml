@@ -1,0 +1,104 @@
+# Publishes a desktop release: push a tag "desktop-vX.Y.Z" (X.Y.Z = desktop/src-tauri/tauri.conf.json
+# version). Builds the signed NSIS installer into release "desktop-vX.Y.Z" and writes latest.json to the
+# fixed release "desktop-latest", which installed apps check (plugins.updater in tauri.conf.json).
+#
+# The signing key only reaches `npx tauri build` (our own step); third-party actions are pinned to
+# commit SHAs and never see it.
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (contents of ~/.tauri/deskhub.key on vibecode). The key has no
+#          password; TAURI_SIGNING_PRIVATE_KEY_PASSWORD may stay unset.
+name: Desktop release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tauri.conf.json (must match the tag)
+        id: v
+        run: |
+          v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "desktop-v$v" ]; then
+            echo "tag $GITHUB_REF_NAME != desktop-v$v"; exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "desktop -> target"
+          cache-on-failure: true
+
+      - run: npm ci
+      - run: cargo test -p deskhub-core -p deskhub-cli
+
+      - name: deskhub-cli sidecar
+        run: |
+          cargo build --release -p deskhub-cli
+          mkdir -p src-tauri/binaries
+          cp target/release/deskhub-cli.exe src-tauri/binaries/deskhub-cli-x86_64-pc-windows-msvc.exe
+
+      - name: Build and sign the installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build
+
+      - name: Release files and latest.json
+        env:
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          dir=target/release/bundle/nsis
+          mkdir -p out
+          # No spaces in asset names (GitHub would rename them and break the updater URL).
+          cp "$dir/Desk Hub_${V}_x64-setup.exe" "out/DeskHub_${V}_x64-setup.exe"
+          cp "$dir/Desk Hub_${V}_x64-setup.exe.sig" "out/DeskHub_${V}_x64-setup.exe.sig"
+          node -e '
+            const fs = require("fs");
+            const v = process.env.V;
+            const repo = process.env.GITHUB_REPOSITORY;
+            const sig = fs.readFileSync(`out/DeskHub_${v}_x64-setup.exe.sig`, "utf8").trim();
+            const url = `https://github.com/${repo}/releases/download/desktop-v${v}/DeskHub_${v}_x64-setup.exe`;
+            fs.writeFileSync("out/latest.json", JSON.stringify({
+              version: v,
+              notes: `Desk Hub ${v}`,
+              pub_date: new Date().toISOString(),
+              platforms: { "windows-x86_64": { signature: sig, url } },
+            }, null, 2));
+          '
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          gh release view "desktop-v$V" >/dev/null 2>&1 || \
+            gh release create "desktop-v$V" --title "Desk Hub v$V" --latest=false \
+              --notes "Desk Hub desktop app v$V. Install the setup .exe once; installed apps update themselves."
+          gh release upload "desktop-v$V" out/DeskHub_${V}_x64-setup.exe out/DeskHub_${V}_x64-setup.exe.sig out/latest.json --clobber
+          gh release view desktop-latest >/dev/null 2>&1 || \
+            gh release create desktop-latest --title "Desk Hub updater" --latest=false \
+              --notes "latest.json for installed apps. Download the installer from the newest desktop-v release."
+          gh release upload desktop-latest out/latest.json --clobber

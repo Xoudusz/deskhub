@@ -5,24 +5,27 @@
 #include <stddef.h>
 #include <time.h>
 #include "hub_model.h"
+#include "ui.h"
 #include "lvgl.h"
 
 // Graphite theme: a flat near-black ground, flat cards with a hairline edge, one
 // warm amber accent for actions and highlights, and cool data colours for series.
 // No gradients or transparency: plain fills are the cheapest thing to redraw.
-#define COL_BG       0x0d0e11   // screen
-#define COL_RAIL     0x111216   // navigation bar
-#define COL_CARD     0x16181d   // card surface
+// The slots below are runtime values (g_theme): the companion app sends its theme,
+// the board keeps it in NVS and loads it before building the UI. Defaults = amber look.
+#define COL_BG       (g_theme.bg)       // screen
+#define COL_RAIL     (g_theme.rail)     // navigation bar
+#define COL_CARD     (g_theme.card)     // card surface
 #define COL_CARD_LO  COL_CARD
-#define COL_CARD_HI  0x262a32   // pressed card, selected tab, empty bar track
-#define COL_BORDER   0x262a32   // hairline card edge
-#define COL_PRESSED  0x30343d   // pressed neutral button
-#define COL_TEXT     0xf3f4f6
-#define COL_MUTED    0x9aa0aa   // secondary text (7:1 on a card)
-#define COL_DIM      0x6b717c   // idle icons and placeholders, not body text
-#define COL_ACCENT   0xffb224   // amber: actions, the current item, highlights
-#define COL_ON_ACCENT 0x16181d  // text and icons on amber
-#define COL_ACCENT_PRESSED 0xd9931a
+#define COL_CARD_HI  (g_theme.card_hi)  // pressed card, selected tab, empty bar track
+#define COL_BORDER   (g_theme.border)   // hairline card edge
+#define COL_PRESSED  (g_theme.pressed)  // pressed neutral button
+#define COL_TEXT     (g_theme.text)
+#define COL_MUTED    (g_theme.muted)    // secondary text
+#define COL_DIM      (g_theme.dim)      // idle icons and placeholders, not body text
+#define COL_ACCENT   (g_theme.accent)   // actions, the current item, highlights
+#define COL_ON_ACCENT (g_theme.on_accent)  // text and icons on the accent
+#define COL_ACCENT_PRESSED (g_theme.accent_pressed)
 #define COL_ACCENT2  0x6cb4ff   // blue: the first data series
 #define COL_CYAN     0x5ed3c6   // teal: the second data series
 #define COL_DATA3    0xb49cff   // lilac: the third data series
