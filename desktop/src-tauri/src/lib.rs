@@ -10,7 +10,7 @@ use deskhub_core::settings::{find_config, import_config_file, Settings, State, S
 use serde_json::Value;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_window_state::StateFlags;
 
@@ -78,18 +78,42 @@ fn load(file: &Path) -> (Settings, bool) {
 /// the two from fighting over the board (it accepts one companion only).
 #[cfg(windows)]
 fn claim_companion_mutex() -> bool {
-    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
     use windows_sys::Win32::System::Threading::CreateMutexW;
     let name: Vec<u16> = "Local\\DeskHubCompanion\0".encode_utf16().collect();
-    // The handle is never closed: the mutex lives as long as the app.
     let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
-    !handle.is_null() && unsafe { GetLastError() } != ERROR_ALREADY_EXISTS
+    if handle.is_null() {
+        return false;
+    }
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        unsafe { CloseHandle(handle) };
+        return false;
+    }
+    // Held until exit (release_companion_mutex), so a restart can claim it again.
+    *COMPANION_MUTEX.lock().unwrap() = Some(handle as usize);
+    true
+}
+
+/// Our handle to the companion mutex, while we hold it.
+#[cfg(windows)]
+static COMPANION_MUTEX: Mutex<Option<usize>> = Mutex::new(None);
+
+#[cfg(windows)]
+fn release_companion_mutex() {
+    if let Some(h) = COMPANION_MUTEX.lock().unwrap().take() {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(h as windows_sys::Win32::Foundation::HANDLE)
+        };
+    }
 }
 
 #[cfg(not(windows))]
 fn claim_companion_mutex() -> bool {
     true
 }
+
+#[cfg(not(windows))]
+fn release_companion_mutex() {}
 
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -107,7 +131,11 @@ fn get_settings(state: tauri::State<'_, App>) -> Settings {
 }
 
 #[tauri::command]
-fn set_settings(app: AppHandle, state: tauri::State<'_, App>, patch: Value) -> Result<Settings, String> {
+fn set_settings(
+    app: AppHandle,
+    state: tauri::State<'_, App>,
+    patch: Value,
+) -> Result<Settings, String> {
     let mut next = state.settings();
     next.merge_patch(patch);
     state.apply(&app, next)
@@ -121,17 +149,25 @@ fn get_status(state: tauri::State<'_, App>) -> Status {
 #[tauri::command]
 async fn board_screenshot(state: tauri::State<'_, App>) -> Result<String, String> {
     let s = state.settings();
-    http::screenshot_data_url(&s.board.host, &s.board.token).await.map_err(|e| format!("{e:#}"))
+    http::screenshot_data_url(&s.board.host, &s.board.token)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
 async fn board_tap(state: tauri::State<'_, App>, x: i64, y: i64) -> Result<(), String> {
     let s = state.settings();
-    http::tap(&s.board.host, &s.board.token, x, y).await.map_err(|e| format!("{e:#}"))
+    http::tap(&s.board.host, &s.board.token, x, y)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
-fn import_config(app: AppHandle, state: tauri::State<'_, App>, path: Option<String>) -> Result<Settings, String> {
+fn import_config(
+    app: AppHandle,
+    state: tauri::State<'_, App>,
+    path: Option<String>,
+) -> Result<Settings, String> {
     let explicit = path.filter(|p| !p.trim().is_empty()).map(PathBuf::from);
     let file = find_config(explicit.as_deref()).ok_or("No config.toml found")?;
     let mut next = import_config_file(&file).map_err(|e| format!("{e:#}"))?;
@@ -145,9 +181,14 @@ fn import_config(app: AppHandle, state: tauri::State<'_, App>, path: Option<Stri
 pub fn run() {
     tauri::Builder::default()
         // Must be first: a second launch only brings the open window forward.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app)
+        }))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         // Size and position only: visibility is ours (--hidden starts in the tray).
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -176,14 +217,16 @@ pub fn run() {
             }
 
             let (service, status) = if claim_companion_mutex() {
-                let svc = tauri::async_runtime::block_on(async { Service::start(settings.clone()) });
+                let svc =
+                    tauri::async_runtime::block_on(async { Service::start(settings.clone()) });
                 let status = svc.status().borrow().clone();
                 (Some(svc), status)
             } else {
                 let status = Status {
                     state: State::Stopped,
                     host: settings.board.host.clone(),
-                    detail: "The Python companion is running. Close it, then restart Desk Hub.".into(),
+                    detail: "The Python companion is running. Close it, then restart Desk Hub."
+                        .into(),
                     firmware: None,
                     since: None,
                 };
@@ -191,7 +234,12 @@ pub fn run() {
             };
 
             let status_rx = service.as_ref().map(|svc| svc.status());
-            app.manage(App { settings: Mutex::new(settings), file, service, status: Mutex::new(status) });
+            app.manage(App {
+                settings: Mutex::new(settings),
+                file,
+                service,
+                status: Mutex::new(status),
+            });
 
             // Forward every status change to the frontend (App is managed by now).
             if let Some(mut rx) = status_rx {
@@ -205,21 +253,33 @@ pub fn run() {
                 });
             }
 
-
             let open = MenuItem::with_id(app, "open", "Open Desk Hub", true, None::<&str>)?;
+            let restart = MenuItem::with_id(app, "restart", "Restart", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &restart, &quit])?;
             let mut tray = TrayIconBuilder::with_id("tray")
                 .tooltip("Desk Hub")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main(app),
+                    // From the main thread restart() skips RunEvent::Exit, so free the
+                    // companion mutex first or the new process sees it taken. The
+                    // single-instance lock is freed by Tauri's cleanup_before_exit.
+                    "restart" => {
+                        release_companion_mutex();
+                        app.restart()
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
                         show_main(tray.app_handle());
                     }
                 });
@@ -248,6 +308,11 @@ pub fn run() {
             board_tap,
             import_config
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Desk Hub");
+        .build(tauri::generate_context!())
+        .expect("error while building Desk Hub")
+        .run(|_app, event| {
+            if let RunEvent::Exit = event {
+                release_companion_mutex();
+            }
+        });
 }
