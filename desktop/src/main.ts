@@ -616,6 +616,11 @@ async function boot() {
     if (section === "status") render(true);
   });
   await onSettings(s => {
+    // A grid or preset list changed elsewhere: drop selections that may now point at
+    // a different block or preset.
+    if (s.home.grid[selBlock]?.widget !== S.home.grid[selBlock]?.widget) selBlock = -1;
+    if (presetSel.startsWith("u") &&
+        s.home.presets[Number(presetSel.slice(1))]?.name !== S.home.presets[Number(presetSel.slice(1))]?.name) presetSel = "";
     S = s;
     applyTheme();
     render();
