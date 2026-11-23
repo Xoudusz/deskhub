@@ -3,7 +3,7 @@
 
 use serde_json::{json, Value};
 
-use crate::settings::{Settings, Theme};
+use crate::settings::{BoardTheme, Settings, Theme};
 
 /// The board's own look (firmware ui_internal.h defaults).
 const CLASSIC: Palette = Palette {
@@ -72,11 +72,17 @@ fn app_palette(theme: Theme) -> Palette {
 
 /// The palette the board should use for these settings.
 pub fn palette(s: &Settings) -> Palette {
-    if s.appearance.board {
-        app_palette(s.appearance.theme)
-    } else {
-        CLASSIC
-    }
+    let theme = match s.appearance.board_theme {
+        BoardTheme::Classic => return CLASSIC,
+        BoardTheme::Same => s.appearance.theme,
+        BoardTheme::Purple => Theme::Purple,
+        BoardTheme::Blue => Theme::Blue,
+        BoardTheme::Graphite => Theme::Graphite,
+        BoardTheme::Midnight => Theme::Midnight,
+        BoardTheme::Teal => Theme::Teal,
+        BoardTheme::Rose => Theme::Rose,
+    };
+    app_palette(theme)
 }
 
 /// {"type":"theme", slot: 0xRRGGBB, ...} for the firmware.
@@ -128,9 +134,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classic_when_board_theming_is_off() {
+    fn classic_board_theme() {
         let mut s = Settings::default();
-        s.appearance.board = false;
+        s.appearance.board_theme = BoardTheme::Classic;
         let v = theme_message(&s);
         assert_eq!(v["accent"], 0xffb224);
         assert_eq!(v["on_accent"], 0x16181d);
@@ -144,6 +150,30 @@ mod tests {
         assert_eq!(v["accent"], 0x7b8cff);
         assert_eq!(v["on_accent"], 0xffffff);
         assert_eq!(v["bg"], 0x05060a);
+    }
+
+    #[test]
+    fn same_follows_the_app_and_own_theme_does_not() {
+        let mut s = Settings::default();
+        s.appearance.theme = Theme::Teal;
+        assert_eq!(theme_message(&s)["accent"], 0x1fb5a8);
+        s.appearance.board_theme = BoardTheme::Rose;
+        assert_eq!(theme_message(&s)["accent"], 0xe0569b);
+        s.appearance.theme = Theme::Blue;
+        assert_eq!(theme_message(&s)["accent"], 0xe0569b);
+    }
+
+    #[test]
+    fn board_theme_from_json() {
+        let mut s = Settings::default();
+        s.merge_patch(serde_json::json!({"appearance": {"board_theme": "classic"}}));
+        assert_eq!(s.appearance.board_theme, BoardTheme::Classic);
+        // Old settings files carry "board": true; it is ignored and the board follows the app.
+        let old: Settings = serde_json::from_value(
+            serde_json::json!({"appearance": {"theme": "rose", "board": true}}),
+        )
+        .unwrap();
+        assert_eq!(old.appearance.board_theme, BoardTheme::Same);
     }
 
     #[test]

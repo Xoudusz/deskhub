@@ -317,17 +317,33 @@ impl Default for GridItem {
 #[serde(default)]
 pub struct Appearance {
     pub theme: Theme,
-    /// The board uses the app theme's colours (false: the board's classic amber look).
-    pub board: bool,
+    /// The board's colours: the app theme, the board's classic amber look, or a theme of its own.
+    pub board_theme: BoardTheme,
 }
 
 impl Default for Appearance {
     fn default() -> Self {
         Self {
             theme: Theme::default(),
-            board: true,
+            board_theme: BoardTheme::Same,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BoardTheme {
+    /// Follow the app theme.
+    #[default]
+    Same,
+    /// The firmware's own amber look.
+    Classic,
+    Purple,
+    Blue,
+    Graphite,
+    Midnight,
+    Teal,
+    Rose,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

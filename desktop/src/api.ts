@@ -24,7 +24,7 @@ export type Settings = {
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board: boolean };
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
@@ -168,7 +168,7 @@ const mock: Settings = {
     ],
     presets: [],
   },
-  appearance: { theme: "midnight", board: true },
+  appearance: { theme: "midnight", board_theme: "same" },
   ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
   tiles: [
     { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },

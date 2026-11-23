@@ -30,6 +30,9 @@ const SECTIONS: [SectionId, string, string][] = [
 const THEMES: [string, string][] = [
   ["midnight", "Midnight (default)"], ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["teal", "Teal"], ["rose", "Rose"],
 ];
+const BOARD_THEMES: [string, string][] = [
+  ["same", "Same as app"], ["classic", "Classic amber"], ...THEMES.map(([k, v]): [string, string] => [k, v.replace(" (default)", "")]),
+];
 const STATE_TEXT: Record<Status["state"], string> = { connected: "Connected", searching: "Searching", refused: "Refused", stopped: "Stopped" };
 const DOT: Record<Status["state"], string> = { connected: "good", searching: "warn", refused: "bad", stopped: "" };
 const SLIDER_SPEC: Record<SliderKey, { label: string; min: number; max: number }> = {
@@ -515,8 +518,8 @@ async function toggleClaude() {
 function appearanceHtml(): string {
   return card("Theme", "Applies at once", [
     row("Colour theme", select(`data-k="theme"`, THEMES, S.appearance.theme)),
-    row("Use on the board", tgl(`data-k="boardTheme"`, S.appearance.board),
-      S.appearance.board ? "The board takes these colours; it restarts once when they change" : "The board keeps its classic amber look"),
+    row("Board colours", select(`data-k="boardTheme"`, BOARD_THEMES, S.appearance.board_theme),
+      "The board restarts once when its colours change"),
   ].join(""));
 }
 
@@ -701,6 +704,9 @@ main.addEventListener("change", e => {
     case "nav":
       void save({ pages: { nav: t.value as Settings["pages"]["nav"] } });
       return;
+    case "boardTheme":
+      void save({ appearance: { board_theme: t.value as Settings["appearance"]["board_theme"] } });
+      return;
     case "theme":
       S.appearance.theme = t.value as Settings["appearance"]["theme"];
       applyTheme();
@@ -744,7 +750,6 @@ main.addEventListener("change", e => {
     case "gameTitle": gamePatch({ title: t.value.trim() }); return;
     case "gameImage": gamePatch({ image: t.value.trim() }); return;
     case "gameLaunch": gamePatch({ launch: t.value.trim() }); return;
-    case "boardTheme": void save({ appearance: { board: on } }); return;
     case "homePreset":
       presetSel = t.value;
       render(true);

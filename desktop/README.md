@@ -42,7 +42,7 @@ type Settings = {
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };   // order = navigation order
   home: {
     presets: { name: string; header: boolean; grid: GridCell[] }[];  // user-saved layouts header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board: boolean };   // default midnight; board: send its palette ("theme" message), default true
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | <theme> };   // default midnight / "same"; board_theme picks the palette sent to the board ("theme" message)
   ai: {
     agent: "auto" | "claude" | "codex";   // auto = most recently used
     live_limits: boolean;        // opt-in Anthropic usage endpoint, default false
