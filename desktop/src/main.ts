@@ -303,7 +303,18 @@ async function importConfig() {
   try {
     S = await api.importConfig();
   } catch (err) {
-    console.error("import_config failed", err);
+    // Only when no file was found: let the user pick it. Other errors (a broken file)
+    // are not about the location.
+    const path = String(err).includes("No config.toml found") ? await api.pickConfig() : null;
+    if (path) {
+      try {
+        S = await api.importConfig(path);
+      } catch (err2) {
+        console.error("import_config failed", err2);
+      }
+    } else {
+      console.error("import_config failed", err);
+    }
   }
   applyTheme();
   render(true);

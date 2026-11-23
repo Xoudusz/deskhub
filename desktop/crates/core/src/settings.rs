@@ -282,19 +282,38 @@ impl Status {
 }
 
 /// Default config.toml locations: an explicit path only, else ./config.toml and
-/// %USERPROFILE%/deskhub/companion/config.toml. None when nothing is found.
+/// %USERPROFILE%/<repo parent>/deskhub/companion/config.toml (see REPO_PARENTS).
+/// None when nothing is found.
 pub fn find_config(explicit: Option<&Path>) -> Option<PathBuf> {
     let candidates: Vec<PathBuf> = match explicit {
         Some(p) => vec![p.to_path_buf()],
         None => {
             let mut v = vec![std::env::current_dir().unwrap_or_default().join("config.toml")];
             if let Some(home) = std::env::var_os("USERPROFILE") {
-                v.push(PathBuf::from(home).join("deskhub").join("companion").join("config.toml"));
+                v.extend(home_candidates(Path::new(&home)));
             }
             v
         }
     };
     candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Common places for the deskhub checkout under the user's home folder.
+const REPO_PARENTS: &[&str] =
+    &["", "src", "source/repos", "Documents", "Documents/GitHub", "GitHub", "code", "dev", "projects", "repos"];
+
+/// `<home>/<parent>/deskhub/companion/config.toml` for every common repo parent.
+fn home_candidates(home: &Path) -> Vec<PathBuf> {
+    REPO_PARENTS
+        .iter()
+        .map(|parent| {
+            let mut p = home.to_path_buf();
+            for part in parent.split('/').filter(|s| !s.is_empty()) {
+                p.push(part);
+            }
+            p.join("deskhub").join("companion").join("config.toml")
+        })
+        .collect()
 }
 
 /// Read a companion config.toml from disk and import it.
@@ -638,6 +657,14 @@ mod tests {
 
         s.merge_patch(json!({"appearance": {"theme": "teal"}}));
         assert_eq!(s.appearance.theme, Theme::Teal);
+    }
+
+    #[test]
+    fn home_candidates_cover_common_repo_folders() {
+        let c = home_candidates(Path::new("/home/u"));
+        assert_eq!(c[0], PathBuf::from("/home/u/deskhub/companion/config.toml"));
+        assert!(c.contains(&PathBuf::from("/home/u/src/deskhub/companion/config.toml")));
+        assert!(c.contains(&PathBuf::from("/home/u/source/repos/deskhub/companion/config.toml")));
     }
 
     #[test]

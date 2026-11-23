@@ -1,6 +1,7 @@
 // Typed wrappers for the frontend <-> backend contract in desktop/README.md.
 // Outside Tauri (npm run dev in a browser) an in-memory mock backend answers instead.
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -119,6 +120,17 @@ export const api = {
   boardTap: async (x: number, y: number): Promise<void> => {
     if (TAURI) await invoke("board_tap", { x, y });
     else console.info("[mock] board_tap", x, y);
+  },
+  /** File picker for config.toml; null when cancelled or in browser mock mode. */
+  pickConfig: async (): Promise<string | null> => {
+    if (!TAURI) return null;
+    const picked = await open({
+      title: "Pick the Python companion's config.toml",
+      multiple: false,
+      directory: false,
+      filters: [{ name: "config.toml", extensions: ["toml"] }],
+    });
+    return typeof picked === "string" ? picked : null;
   },
   importConfig: (path?: string): Promise<Settings> => {
     if (TAURI) return invoke<Settings>("import_config", { path });

@@ -43,6 +43,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop -> target
+          cache-on-failure: true
       - run: npm ci
       - run: npx tauri build
       - uses: actions/upload-artifact@v4

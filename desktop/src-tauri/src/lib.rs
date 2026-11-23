@@ -146,6 +146,7 @@ pub fn run() {
     tauri::Builder::default()
         // Must be first: a second launch only brings the open window forward.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         // Size and position only: visibility is ours (--hidden starts in the tray).
         .plugin(
