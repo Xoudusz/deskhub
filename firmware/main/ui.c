@@ -19,13 +19,7 @@
 
 static const char *TAG = "ui";
 
-extern const uint8_t icons_ttf_start[] asm("_binary_MaterialIcons_Regular_ttf_start");
-extern const uint8_t icons_ttf_end[] asm("_binary_MaterialIcons_Regular_ttf_end");
-// Inter: Medium for text, SemiBold for large numbers and the clock.
-extern const uint8_t text_ttf_start[] asm("_binary_Inter_Medium_ttf_start");
-extern const uint8_t text_ttf_end[] asm("_binary_Inter_Medium_ttf_end");
-extern const uint8_t clock_ttf_start[] asm("_binary_Inter_SemiBold_ttf_start");
-extern const uint8_t clock_ttf_end[] asm("_binary_Inter_SemiBold_ttf_end");
+#include "ui_fonts.h"
 
 lv_font_t *g_icon_20, *g_icon_24, *g_icon_32, *g_icon_48, *g_icon_80, *g_font_clock;
 lv_font_t *g_font_14, *g_font_16, *g_font_20, *g_font_24, *g_font_28, *g_font_32, *g_font_48;
