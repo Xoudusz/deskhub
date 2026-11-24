@@ -747,8 +747,9 @@ The board treats the PC as offline once nothing has arrived for 5 seconds. Witho
 ```
 firmware/    ESP-IDF 5.5 + LVGL 9 firmware for the ESP32-S3
 companion/   Python companion: stats, media, calendars, Claude usage, shortcuts, setup
+desktop/     Desktop app (Tauri, in progress): replaces the Python companion; see desktop/README.md
 docs/        screenshots
-.github/     CI: builds the firmware and runs the companion tests on every push
+.github/     CI: builds the firmware, runs the companion tests, builds the desktop app installer
 ```
 
 - **Build by hand**: in `firmware/`, load ESP-IDF's `export.ps1` (see [Run setup](#3-run-setup)), then run `idf.py build` and `idf.py -p COM5 flash monitor`. The board's settings live in `firmware/sdkconfig`, which holds your Wi-Fi password and is git-ignored.

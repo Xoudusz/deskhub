@@ -1,0 +1,88 @@
+/* Desk Hub settings window: settings-window part of Atreia settings.css, plus Desk Hub rules at the end. */
+/* settings sliders (0.8.33): one per line, − / + buttons */
+.sl { padding: 4px 0; }
+.sl .slh { display: flex; justify-content: space-between; align-items: baseline; font-size: .76rem; color: var(--dim); }
+.sl .slh b { color: var(--fg); font-family: var(--mono); font-weight: 600; }
+.sl .slc { display: flex; align-items: center; gap: 6px; }
+.sl .slc input[type=range] { flex: 1; min-width: 0; }
+.sl .slb { width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.sln { margin: 2px 0 6px; }
+/* ---------- Settings window (0.8.75): section sidebar, cards of switches and sliders ---------- */
+body.settingswin .ov { display: flex; flex-direction: column; padding: 0; gap: 0; background: rgba(var(--card-rgb), .97); border: 1px solid rgba(var(--acc-rgb), .45); border-radius: 12px; }
+.swh { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); cursor: move; }
+.swt { display: flex; align-items: center; gap: 8px; font-size: .95rem; font-weight: 600; color: var(--fg); }
+.swt .i { width: 17px; height: 17px; color: var(--accent); }
+.swh .swnote { margin-left: auto; font-size: .72rem; }
+.swh button.ib { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted); }
+.swh button.ib:hover { color: var(--bad); background: var(--panel3); }
+.swb { flex: 1; min-height: 0; display: grid; grid-template-columns: 186px minmax(0, 1fr); }
+.swnav { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-right: 1px solid var(--line); overflow-y: auto; }
+.swnav button { justify-content: flex-start; gap: 9px; width: 100%; padding: 6px 9px; border-color: transparent; background: transparent; color: var(--muted); font-size: .8rem; text-align: left; }
+.swnav button .i { width: 15px; height: 15px; flex: none; }
+.swnav button:hover { color: var(--fg); background: var(--panel3); }
+.swnav button.on { color: var(--accent); background: var(--accent-bg); border-color: rgba(var(--acc-rgb), .35); }
+.swnav .ver { margin-top: auto; padding: 8px 9px 2px; font-size: .68rem; color: var(--dim); }
+.swmain { overflow-y: auto; padding: 12px 14px 18px; }
+.swc { margin-bottom: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: rgba(var(--acc-rgb), .04); }
+.swch { display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; background: rgba(var(--acc-rgb), .1); }
+.swch b { font-size: .72rem; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); }
+.swch .sub { font-size: .72rem; }
+.swr { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: .82rem; color: var(--fg); }
+.swr .swl { min-width: 0; }
+.swr .swl .sub, .swr .swl.sub { font-size: .72rem; margin-top: 2px; line-height: 1.45; }
+.swr .swl a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.swr.swsl { display: block; padding: 6px 12px 8px; }
+.swx { flex: none; display: flex; align-items: center; gap: 6px; }
+.tgl { position: relative; flex: none; width: 36px; height: 20px; cursor: pointer; }
+.tgl input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.tgl i { position: absolute; inset: 0; border-radius: 10px; background: var(--panel3); border: 1px solid var(--line2); transition: background .15s, border-color .15s; pointer-events: none; }
+.tgl i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: left .15s, background .15s; }
+.tgl input:checked + i { background: var(--accent); border-color: var(--accent); }
+.tgl input:checked + i::after { left: 18px; background: #fff; }
+.tgl input:focus-visible + i { box-shadow: 0 0 0 3px rgba(var(--acc-rgb), .25); }
+body.settingswin .grip { position: absolute; right: 6px; bottom: 6px; }
+/* compact controls in the Settings window (0.8.81, David: "sliders and stuff are a bit too big") */
+body.settingswin .swr { padding: 6px 12px; font-size: .78rem; gap: 12px; }
+body.settingswin .swr.swsl { padding: 4px 12px 6px; }
+body.settingswin .swch { padding: 7px 12px; }
+body.settingswin .swr button { padding: 3px 9px; font-size: .74rem; }
+body.settingswin .tgl { width: 30px; height: 16px; }
+body.settingswin .tgl i { border-radius: 8px; }
+body.settingswin .tgl i::after { top: 2px; left: 2px; width: 10px; height: 10px; }
+body.settingswin .tgl input:checked + i::after { left: 16px; }
+body.settingswin .sl .slh { font-size: .72rem; }
+body.settingswin .sl .slc { gap: 5px; }
+body.settingswin .sl .slb { width: 20px; height: 20px; }
+body.settingswin .sl .slb .i { width: 11px; height: 11px; }
+body.settingswin input[type=range] { -webkit-appearance: none; appearance: none; height: 14px; background: transparent; cursor: pointer; }
+body.settingswin input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--p, 50%), var(--panel3) var(--p, 50%)); }
+body.settingswin input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); }
+
+/* Desk Hub additions */
+.swx input, .swx select { font-size: .78rem; padding: 4px 7px; }
+.swx input.txt { width: 190px; }
+.swx input[type=time] { width: 112px; }
+.swx select { min-width: 150px; }
+.swl .i { width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; color: var(--accent); }
+.swt .dot { margin-right: 2px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.good { background: var(--good); box-shadow: 0 0 6px rgba(62,207,142,.6); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+.grid-wrap { padding: 8px 12px 10px; }
+.hgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(3, 44px); gap: 4px; }
+.hcell { border: 1px dashed var(--line); border-radius: 6px; }
+.hblock { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; padding: 3px 3px 3px 8px; border-radius: 6px; background: rgba(var(--acc-rgb), .18); border: 1px solid rgba(var(--acc-rgb), .5); font-size: .72rem; }
+.hblock span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hblock small { display: block; color: var(--muted); font-size: .66rem; }
+.hblock .ib { width: 20px; height: 20px; flex: none; }
+.hblock .ib .i { width: 11px; height: 11px; }
+.updown { display: inline-flex; gap: 4px; }
+.updown .ib { width: 22px; height: 22px; }
+.updown .ib .i { width: 12px; height: 12px; }
+.prev { position: relative; width: 100%; aspect-ratio: 800 / 480; background: #000; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.prev img { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.prev.offline { display: flex; align-items: center; justify-content: center; background: var(--panel2); color: var(--muted); font-size: .8rem; }
+.pulse { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--accent2); pointer-events: none; animation: pulse .7s ease-out forwards; }
+@keyframes pulse { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }

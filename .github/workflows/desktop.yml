@@ -1,0 +1,52 @@
+name: Desktop app
+
+on:
+  push:
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+
+jobs:
+  core:
+    # Board protocol, session, settings: plain Rust, tested on Linux.
+    name: Core tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop -> target
+      - run: cargo test -p deskhub-core
+      - run: cargo clippy -p deskhub-core --all-targets -- -D warnings
+
+  app:
+    # The real app: frontend build plus Tauri shell, packed as an NSIS installer.
+    name: Windows installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop -> target
+          cache-on-failure: true
+      - run: npm ci
+      - run: npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskhub-desktop-setup
+          path: desktop/target/release/bundle/nsis/*.exe
