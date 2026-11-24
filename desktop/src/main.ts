@@ -301,7 +301,7 @@ function pagesHtml(): string {
     ...S.home.presets.map((p, i) => [`u${i}`, `${p.name} (yours)`] as [string, string]),
   ];
   const own = presetSel.startsWith("u");
-  const home = card("Home screen", "5 columns by 3 rows. Click a block to resize it.", [
+  const home = card("Home screen", "5 columns by 3 rows. Drag a block to move it, its corner to resize it.", [
     row("Layout",
       select(`data-k="homePreset"`, presetOpts, presetSel) +
       `<button type="button" data-act="preset-apply"${presetSel ? "" : " disabled"}>Apply</button>` +
@@ -325,9 +325,12 @@ function gridHtml(): string {
   const blocks = S.home.grid.map((c, i) => {
     for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) occupied.add(`${x},${y}`);
     const label = WIDGET_LABELS[c.widget as Widget] ?? c.widget;
+    const sz = HOME_SIZES[c.widget as Widget];
+    const resizable = sz && (sz.w[0] < sz.w[1] || sz.h[0] < sz.h[1]);
     return `<div class="hblock${i === selBlock ? " sel" : ""}" data-act="grid-select" data-idx="${i}" style="grid-column:${c.x + 1} / span ${c.w};grid-row:${c.y + 1} / span ${c.h}">` +
       `<span>${esc(label)}<small>${c.w} x ${c.h}</small></span>` +
-      `<button type="button" class="ib" data-act="grid-remove" data-idx="${i}" title="Remove">${icon("x", 11)}</button></div>`;
+      `<button type="button" class="ib" data-act="grid-remove" data-idx="${i}" title="Remove">${icon("x", 11)}</button>` +
+      (resizable ? `<div class="hres" title="Drag to resize"></div>` : "") + `</div>`;
   }).join("");
   const cells: string[] = [];
   for (let y = 0; y < GRID_ROWS; y++) {
@@ -361,12 +364,102 @@ let selBlock = -1;
 let presetSel = "";
 let presetName = "";
 
-/** Whether block `i` can take size w x h at its spot: inside the grid, no overlap. */
-function sizeFits(i: number, w: number, h: number): boolean {
-  const c = S.home.grid[i];
-  if (c.x + w > GRID_COLS || c.y + h > GRID_ROWS) return false;
-  return S.home.grid.every((o, j) => j === i || !(o.x < c.x + w && c.x < o.x + o.w && o.y < c.y + h && c.y < o.y + o.h));
+/** Whether block `i` can sit at `c`: inside the grid, no overlap with the other blocks. */
+function fits(i: number, c: Cell): boolean {
+  if (c.x < 0 || c.y < 0 || c.x + c.w > GRID_COLS || c.y + c.h > GRID_ROWS) return false;
+  return S.home.grid.every((o, j) => j === i || !(o.x < c.x + c.w && c.x < o.x + o.w && o.y < c.y + c.h && c.y < o.y + o.h));
 }
+
+/** Whether block `i` can take size w x h at its spot. */
+function sizeFits(i: number, w: number, h: number): boolean {
+  return fits(i, { ...S.home.grid[i], w, h });
+}
+
+// ---- Home builder: drag a block to move it, its corner handle to resize it ----
+type Drag = { i: number; el: HTMLElement; grid: HTMLElement; resize: boolean; col: number; row: number; orig: Cell; next: Cell };
+let drag: Drag | null = null;
+/** A drag ends with a click on the block; that click must not toggle the selection. */
+let dragEndedAt = 0;
+
+/** The grid cell under the pointer, clamped to the grid. */
+function cellAt(grid: HTMLElement, e: PointerEvent): [number, number] {
+  const r = grid.getBoundingClientRect();
+  const col = Math.floor(((e.clientX - r.left) / r.width) * GRID_COLS);
+  const row = Math.floor(((e.clientY - r.top) / r.height) * GRID_ROWS);
+  return [Math.max(0, Math.min(GRID_COLS - 1, col)), Math.max(0, Math.min(GRID_ROWS - 1, row))];
+}
+
+const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+main.addEventListener("pointerdown", e => {
+  const t = e.target as HTMLElement;
+  if (drag || e.button !== 0 || t.closest(".ib")) return;
+  const el = t.closest<HTMLElement>(".hblock");
+  const grid = el?.closest<HTMLElement>(".hgrid");
+  if (!el || !grid) return;
+  const i = Number(el.dataset.idx);
+  const c = S.home.grid[i];
+  if (!c) return;
+  const [col, row] = cellAt(grid, e);
+  drag = { i, el, grid, resize: !!t.closest(".hres"), col, row, orig: { ...c }, next: { ...c } };
+  el.setPointerCapture(e.pointerId);
+  el.classList.add("dragging");
+  e.preventDefault();
+});
+
+main.addEventListener("pointermove", e => {
+  if (!drag) return;
+  // A re-render (settings changed elsewhere) replaced the grid: give up this drag.
+  if (!drag.el.isConnected) {
+    drag = null;
+    return;
+  }
+  const [col, row] = cellAt(drag.grid, e);
+  const dc = col - drag.col, dr = row - drag.row;
+  const o = drag.orig;
+  let n: Cell;
+  if (drag.resize) {
+    const sz = HOME_SIZES[o.widget as Widget];
+    n = {
+      ...o,
+      w: clampN(o.w + dc, sz.w[0], Math.min(sz.w[1], GRID_COLS - o.x)),
+      h: clampN(o.h + dr, sz.h[0], Math.min(sz.h[1], GRID_ROWS - o.y)),
+    };
+  } else {
+    n = { ...o, x: clampN(o.x + dc, 0, GRID_COLS - o.w), y: clampN(o.y + dr, 0, GRID_ROWS - o.h) };
+  }
+  if (n.x === drag.next.x && n.y === drag.next.y && n.w === drag.next.w && n.h === drag.next.h) return;
+  drag.next = n;
+  drag.el.style.gridColumn = `${n.x + 1} / span ${n.w}`;
+  drag.el.style.gridRow = `${n.y + 1} / span ${n.h}`;
+  drag.el.classList.toggle("bad", !fits(drag.i, n));
+  const small = drag.el.querySelector("small");
+  if (small) small.textContent = `${n.w} x ${n.h}`;
+});
+
+function endDrag(cancel: boolean) {
+  const d = drag;
+  if (!d) return;
+  drag = null;
+  d.el.classList.remove("dragging");
+  const { orig: o, next: n } = d;
+  const moved = n.x !== o.x || n.y !== o.y || n.w !== o.w || n.h !== o.h;
+  if (!moved) return;   // a plain click: selects the block
+  dragEndedAt = Date.now();
+  // The grid changed under the drag (another window, a preset): don't save a stale block.
+  const cur = S.home.grid[d.i];
+  const same = d.el.isConnected && cur && cur.widget === o.widget && cur.x === o.x && cur.y === o.y && cur.w === o.w && cur.h === o.h;
+  if (!cancel && same && fits(d.i, n)) {
+    selBlock = d.i;
+    homeNote = "";
+    void save({ home: { grid: S.home.grid.map((c, j) => (j === d.i ? n : c)) } });
+  } else {
+    render(true);       // back to where it was
+  }
+}
+
+main.addEventListener("pointerup", () => endDrag(false));
+main.addEventListener("pointercancel", () => endDrag(true));
 
 function sizeRow(): string {
   const c = S.home.grid[selBlock];
@@ -739,6 +832,7 @@ async function act(el: HTMLElement) {
 
 main.addEventListener("click", e => {
   const t = e.target as HTMLElement;
+  if (Date.now() - dragEndedAt < 250 && t.closest(".hblock") && !t.closest(".ib")) return;
   if (t.id === "shot") {
     tap(e as MouseEvent, t as HTMLImageElement);
     return;
