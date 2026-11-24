@@ -102,20 +102,6 @@ void ui_update_message(const char *text)
     lv_obj_add_flag(s_buttons, LV_OBJ_FLAG_HIDDEN);
 }
 
-// A release image on a board without Wi-Fi settings: nothing works until a local build
-// (with sdkconfig.local) has run once and stored them.
-void ui_setup_needed_show(void)
-{
-    if (!s_root) build();
-    lv_label_set_text(s_title, "Desk Hub needs setup");
-    lv_label_set_text(s_sub, "This board has no Wi-Fi settings yet. Flash a local build once "
-                             "(firmware/build.sh with sdkconfig.local); later updates come from the app.");
-    lv_obj_add_flag(s_buttons, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(s_root, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(s_root);
-}
-
 void ui_update_hide(void)
 {
     if (s_root) lv_obj_add_flag(s_root, LV_OBJ_FLAG_HIDDEN);

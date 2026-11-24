@@ -9,6 +9,7 @@
 #include "hub_model.h"
 #include "hubcfg.h"
 #include "lvgl.h"
+#include "net.h"
 #include "ui.h"
 #include "ui_internal.h"
 #include "weather.h"
@@ -65,6 +66,7 @@ EMSCRIPTEN_KEEPALIVE void sim_init(void)
     lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(in, pointer_cb);
     hubcfg_load();
+    net_start();   // joins the first saved fake network
     ui_init();
 }
 

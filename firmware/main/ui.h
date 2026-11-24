@@ -53,4 +53,7 @@ void ui_update_show(void);
 void ui_update_progress(int pct);
 void ui_update_message(const char *text);
 void ui_update_hide(void);
-void ui_setup_needed_show(void);  // no Wi-Fi settings: flash a local build once
+// Wi-Fi screen: networks, the app token, an on-screen keyboard. Opens by itself when no
+// network is saved (main.c), and from the Wi-Fi icon.
+void ui_wifi_show(void);
+bool ui_wifi_shown(void);

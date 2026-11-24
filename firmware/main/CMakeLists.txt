@@ -9,8 +9,8 @@ else()
 endif()
 
 idf_component_register(
-    SRCS "main.c" "${board_src}" "hubcfg.c" "display.c" "net.c" "hub_server.c" "hub_dispatch.c" "weather.c" "weather_data.c"
-         "ui.c" "ui_home.c" "ui_stats.c" "ui_media.c" "ui_calendar.c" "ui_weather.c" "ui_shortcuts.c" "ui_claude.c" "ui_printer.c" "ui_alert.c" "ui_timer.c" "ui_games.c" "ui_net.c" "ui_github.c" "ui_saver.c" "ui_update.c" "ota.c" "logos.c" "lv_mem_psram.c"
+    SRCS "main.c" "${board_src}" "hubcfg.c" "wifi_store.c" "display.c" "net.c" "hub_server.c" "hub_dispatch.c" "weather.c" "weather_data.c"
+         "ui.c" "ui_home.c" "ui_stats.c" "ui_media.c" "ui_calendar.c" "ui_weather.c" "ui_shortcuts.c" "ui_claude.c" "ui_printer.c" "ui_alert.c" "ui_timer.c" "ui_games.c" "ui_net.c" "ui_github.c" "ui_saver.c" "ui_update.c" "ui_wifi.c" "ota.c" "logos.c" "lv_mem_psram.c"
     INCLUDE_DIRS "."
     EMBED_FILES "fonts/MaterialIcons-Regular.ttf" "fonts/Inter-Medium.ttf" "fonts/Inter-SemiBold.ttf"
     REQUIRES esp_lcd esp_driver_i2c esp_driver_gpio esp_wifi esp_netif esp_event nvs_flash

@@ -18,7 +18,7 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
-    hubcfg_load();   // Wi-Fi, token and location: NVS, seeded from a local build
+    hubcfg_load();   // Wi-Fi networks, token and location: NVS, seeded from a local build
 
     ESP_ERROR_CHECK(board_init());
     // Wi-Fi first, so its internal-RAM buffers are allocated before the UI grows.
@@ -27,7 +27,7 @@ void app_main(void)
 
     display_lock();
     ui_init();
-    if (net_needs_setup()) ui_setup_needed_show();
+    if (net_needs_setup()) ui_wifi_show();   // no saved network: set one up on screen
     display_unlock();
 
     hub_server_start();

@@ -12,6 +12,7 @@
 #include "net.h"
 #include "nvs.h"
 #include "ota.h"
+#include "wifi_store.h"
 
 // ---- restart ----------------------------------------------------------------
 void esp_restart(void)
@@ -32,12 +33,108 @@ void display_set_brightness(int day_pct, int night_pct) { (void)day_pct; (void)n
 void display_inject_tap(uint16_t x, uint16_t y) { (void)x; (void)y; }
 void display_inject_drag(uint16_t x, uint16_t y, uint16_t x2, int ms) { (void)x; (void)y; (void)x2; (void)ms; }
 
-// ---- net: always online with a valid clock ------------------------------------
-void net_start(void) {}
-bool net_connected(void) { return true; }
-bool net_needs_setup(void) { return false; }
+// ---- net: fake networks, a valid clock --------------------------------------------
+// The saved list is the real wifi_store (in the JS NVS). A scan takes a second and finds
+// FAKE_APS; joining takes 1.5 s and fails for a password starting with "wrong" (or "Far Away").
+static const net_ap_t FAKE_APS[] = {
+    {"Home Wi-Fi", -45, true}, {"Office", -58, true}, {"Cafe Guest", -67, false},
+    {"Neighbour 5G", -76, true}, {"Far Away", -88, true},
+};
+#define N_FAKE ((int)(sizeof(FAKE_APS) / sizeof(FAKE_APS[0])))
+static char s_cur[33];
+static double s_scan_at = -1, s_join_at = -1;
+static uint32_t s_gen;
+static int s_nap;
+static char s_join_ssid[33], s_join_pass[65];
+static net_join_t s_join = NET_JOIN_IDLE;
+
+static bool fake_in_range(const char *ssid)
+{
+    for (int i = 0; i < N_FAKE; i++) {
+        if (!strcmp(FAKE_APS[i].ssid, ssid) && strcmp(ssid, "Far Away")) return true;
+    }
+    return false;
+}
+
+// The first saved network in range, as the board would pick (by recency, not signal).
+static void auto_join(void)
+{
+    wifi_net_t n;
+    s_cur[0] = 0;
+    for (int i = 0; wifi_store_get(i, &n); i++) {
+        if (fake_in_range(n.ssid)) { snprintf(s_cur, sizeof(s_cur), "%s", n.ssid); return; }
+    }
+}
+
+static void poll(void)
+{
+    double now = emscripten_get_now();
+    if (s_scan_at >= 0 && now >= s_scan_at) { s_scan_at = -1; s_nap = N_FAKE; s_gen++; }
+    if (s_join_at >= 0 && now >= s_join_at) {
+        s_join_at = -1;
+        if (!strncmp(s_join_pass, "wrong", 5) || !fake_in_range(s_join_ssid)) {
+            s_join = NET_JOIN_FAIL;
+            auto_join();
+        } else {
+            wifi_store_add(s_join_ssid, s_join_pass);
+            wifi_store_flush();
+            snprintf(s_cur, sizeof(s_cur), "%s", s_join_ssid);
+            s_join = NET_JOIN_OK;
+        }
+    }
+}
+
+void net_start(void) { auto_join(); }
+bool net_connected(void) { poll(); return s_cur[0] != 0; }
+bool net_needs_setup(void) { return wifi_store_count() == 0; }
 bool net_time_valid(void) { return true; }
-const char *net_ip(void) { return "simulator"; }
+const char *net_ip(void) { poll(); return s_cur[0] ? "192.168.1.50" : ""; }
+void net_ssid(char *out, size_t n) { poll(); snprintf(out, n, "%s", s_cur); }
+bool net_scan_start(void) { if (s_scan_at < 0) s_scan_at = emscripten_get_now() + 1000; return true; }
+bool net_scanning(void) { poll(); return s_scan_at >= 0; }
+
+int net_scan_results(net_ap_t *out, int max, uint32_t *gen)
+{
+    poll();
+    int n = s_nap < max ? s_nap : max;
+    memcpy(out, FAKE_APS, (size_t)n * sizeof(net_ap_t));
+    if (gen) *gen = s_gen;
+    return n;
+}
+
+void net_join(const char *ssid, const char *pass)
+{
+    snprintf(s_join_ssid, sizeof(s_join_ssid), "%s", ssid);
+    snprintf(s_join_pass, sizeof(s_join_pass), "%s", pass);
+    s_cur[0] = 0;
+    s_join = NET_JOIN_BUSY;
+    s_join_at = emscripten_get_now() + 1500;
+}
+
+net_join_t net_join_state(void) { poll(); return s_join; }
+
+bool net_join_saved(const char *ssid)
+{
+    wifi_net_t n;
+    if (!wifi_store_find(ssid, &n)) return false;
+    net_join(n.ssid, n.pass);
+    return true;
+}
+
+void net_forget(const char *ssid)
+{
+    wifi_store_forget(ssid);
+    wifi_store_flush();
+    if (!strcmp(ssid, s_cur)) auto_join();
+}
+
+int net_saved(char (*out)[33], int max)
+{
+    wifi_net_t n;
+    int i = 0;
+    while (i < max && wifi_store_get(i, &n)) { snprintf(out[i], 33, "%s", n.ssid); i++; }
+    return i;
+}
 
 // ---- hub_server: the PC is the app itself; what the board would send is dropped ----
 void hub_server_start(void) {}
@@ -157,6 +254,10 @@ void hubcfg_load(void)
     nvs_get_u8(h, "h_24", &b);
     s_cfg.h24 = b;
     s_cfg.screen_off_min = 0;
+    snprintf(s_cfg.host, sizeof(s_cfg.host), "deskhub");
+    // Not a real token: the simulator never talks to the app over the network.
+    snprintf(s_cfg.token, sizeof(s_cfg.token), "simulator");
+    wifi_store_init("Home Wi-Fi", "simulator", false);   // a first network, like a set-up board
     s_cfg.creds_in_nvs = true;
 }
 

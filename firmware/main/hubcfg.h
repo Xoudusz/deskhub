@@ -20,6 +20,8 @@ typedef struct {
     bool fahrenheit;
     bool h24;
     int screen_off_min;
+    // ssid/pass: the single network of older firmware and local builds; the board now joins
+    // the saved networks in wifi_store.h (this one is the first of them).
     // Wi-Fi and token are stored in NVS (not only compiled in): GitHub images will work.
     bool creds_in_nvs;
 } hub_cfg_t;

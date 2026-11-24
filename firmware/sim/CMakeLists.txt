@@ -14,7 +14,7 @@ target_compile_options(lvgl PRIVATE -O2 -w)
 
 set(UI_SRC
     ui.c ui_home.c ui_stats.c ui_media.c ui_calendar.c ui_weather.c ui_shortcuts.c ui_claude.c
-    ui_printer.c ui_alert.c ui_timer.c ui_games.c ui_net.c ui_github.c ui_saver.c ui_update.c
+    ui_printer.c ui_alert.c ui_timer.c ui_games.c ui_net.c ui_github.c ui_saver.c ui_update.c ui_wifi.c wifi_store.c
     logos.c hub_dispatch.c weather_data.c)
 list(TRANSFORM UI_SRC PREPEND ${MAIN}/)
 

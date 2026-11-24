@@ -55,6 +55,7 @@ static uint8_t *s_art_buf;
 static lv_obj_t *s_pages[PAGE_COUNT];
 static lv_obj_t *s_nav[PAGE_COUNT];
 static lv_obj_t *s_wifi_icon, *s_pc_icon;
+static void wifi_icon_cb(lv_event_t *e);
 static lv_obj_t *s_nav_logo;   // the AI tab's agent logo
 int g_nav = NAV_LEFT;
 
@@ -768,6 +769,16 @@ static void build_rail(lv_obj_t *scr)
     }
     s_pc_icon = ui_label(status, font, COL_DIM, ICON_DESKTOP_WINDOWS);
     s_wifi_icon = ui_label(status, font, COL_DIM, ICON_WIFI_OFF);
+    // Tap the Wi-Fi icon for the Wi-Fi screen (change or add a network).
+    lv_obj_add_flag(s_wifi_icon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(s_wifi_icon, 14);
+    lv_obj_add_event_cb(s_wifi_icon, wifi_icon_cb, LV_EVENT_CLICKED, NULL);
+}
+
+static void wifi_icon_cb(lv_event_t *e)
+{
+    (void)e;
+    ui_wifi_show();
 }
 
 static void tick_cb(lv_timer_t *t)
