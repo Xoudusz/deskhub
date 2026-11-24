@@ -9,10 +9,7 @@ use serde_json::{json, Value};
 
 use super::tail::Tail;
 use super::time::{floor_hour, parse_iso_ms};
-use super::{contains, live_limits, num, prune, py_str, summary, window, Usage, BLOCK_MS};
-
-/// Live readings newer than this count as "recent" activity.
-const RECENT_MS: i64 = 15 * 60 * 1000;
+use super::{contains, num, prune, py_str, summary, window, Usage, BLOCK_MS};
 
 #[derive(Default)]
 pub struct Claude {
@@ -86,7 +83,7 @@ fn family(model: &str) -> &'static str {
 
 impl Claude {
     /// The Claude part of the "ai" message. `home` is the user's home dir; `now` is epoch ms.
-    pub fn snapshot(&mut self, home: Option<&Path>, now: i64, live: bool) -> Value {
+    pub fn snapshot(&mut self, home: Option<&Path>, now: i64, live: Option<&Value>) -> Value {
         if let Some(home) = home {
             let log = &mut self.log;
             self.tail
@@ -98,7 +95,7 @@ impl Claude {
         let horizon = super::horizon(now);
         self.log.seen.retain(|_, ts| *ts >= horizon);
         let usage = &self.log.usage;
-        let limits = claude_limits(home, now, usage.last().map(|u| u.ts), live);
+        let limits = claude_limits(home, now, live);
         let block = match current_block(usage, now) {
             Some(start) => {
                 let (tokens, messages) = usage
@@ -136,18 +133,14 @@ fn current_block(usage: &[Usage], now: i64) -> Option<i64> {
     start.filter(|s| now < s + BLOCK_MS)
 }
 
-/// Status line readings, or live ones when enabled and newer (Python ClaudeUsage._limits).
-fn claude_limits(home: Option<&Path>, now: i64, last_ts: Option<i64>, live: bool) -> Value {
-    let mut limits = read_limits(home, now);
-    if live {
-        let recent = last_ts.is_some_and(|t| now - t < RECENT_MS);
-        if let Some(l) = live_limits(recent) {
-            if num(l.get("updated")) >= num(limits.get("updated")) {
-                limits = l;
-            }
-        }
+/// Status line readings, or the live ones (ai/live.rs) when given and newer
+/// (Python ClaudeUsage._limits).
+fn claude_limits(home: Option<&Path>, now: i64, live: Option<&Value>) -> Value {
+    let limits = read_limits(home, now);
+    match live {
+        Some(l) if num(l.get("updated")) >= num(limits.get("updated")) => l.clone(),
+        _ => limits,
     }
-    limits
 }
 
 /// Plan limits saved by the status line bridge in ~/.deskhub/claude_status.json. Windows
@@ -297,7 +290,7 @@ mod tests {
             &status.to_string(),
         );
 
-        let snap = Claude::default().snapshot(Some(home.as_path()), NOW_MS, false);
+        let snap = Claude::default().snapshot(Some(home.as_path()), NOW_MS, None);
         let expected = json!({
             "limits": {
                 "five_hour": {"pct": 42.3, "reset": NOW_S + 3600},
@@ -326,7 +319,7 @@ mod tests {
     #[test]
     fn no_transcripts_gives_idle_snapshot() {
         let dir = temp_dir("claude-empty");
-        let snap = Claude::default().snapshot(Some(dir.as_path()), NOW_MS, false);
+        let snap = Claude::default().snapshot(Some(dir.as_path()), NOW_MS, None);
         assert_eq!(snap["block"], json!({"active": false}));
         assert_eq!(snap["days"], json!([0, 0, 0, 0, 0, 0, 0]));
         assert_eq!(snap["limits"], json!({}));

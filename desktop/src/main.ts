@@ -621,7 +621,7 @@ function aiHtml(): string {
   const linked = !!claude && claude.statusline && claude.hooks;
   const usage = card("Usage", "What the board's AI page shows", [
     row("Agent", select(`data-k="aiAgent"`, [["auto", "Most recently used"], ["claude", "Claude Code"], ["codex", "Codex"]], a.agent)),
-    row("Live limits", tgl(`data-k="aiLive"`, a.live_limits), "Reads the 5-hour and weekly limits from Anthropic. Coming in a later update"),
+    row("Live limits", tgl(`data-k="aiLive"`, a.live_limits), "Reads the 5-hour and weekly limits from Anthropic with your Claude Code sign-in (no tokens used)"),
   ].join(""));
   const cc = card("Claude Code", "Limits and waiting alerts come from Claude Code", [
     row(linked ? "Connected" : "Not connected",

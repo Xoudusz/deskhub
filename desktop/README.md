@@ -48,7 +48,7 @@ type Settings = {
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | <theme> };   // default midnight / "same"; board_theme picks the palette sent to the board ("theme" message)
   ai: {
     agent: "auto" | "claude" | "codex";   // auto = most recently used
-    live_limits: boolean;        // opt-in Anthropic usage endpoint, default false
+    live_limits: boolean;        // opt-in: 5-hour/weekly limits from Anthropic's usage endpoint with Claude Code's sign-in (~/.claude/.credentials.json; token never logged or sent to the board), default false
     alerts: boolean;             // "Claude is waiting" alerts, default true
     idle_alert_seconds: number;  // default 30
   };
