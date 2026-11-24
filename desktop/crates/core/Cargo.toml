@@ -18,16 +18,22 @@ serde_json = { version = "1", features = ["preserve_order"] }
 # Local time zone offset for the "today" and day buckets of the AI usage.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 toml = "1"
-# Plain HTTP only: the board has no TLS. Add a TLS feature when GitHub downloads arrive (M5).
+# Plain HTTP here; TLS (schannel) is added for Windows below, so Linux builds need no OpenSSL.
 reqwest = { version = "0.12", default-features = false }
 image = { version = "0.25", default-features = false, features = ["bmp", "png", "jpeg"] }
 base64 = "0.22"
 anyhow = "1"
 log = "0.4"
 sysinfo = "0.37"
+# Checks downloaded firmware images against firmware.json.
+sha2 = "0.10"
 
 # Windows-only collectors (media session, PDH GPU counters, power events, input, audio).
 [target.'cfg(windows)'.dependencies]
+# The board token in Windows Credential Manager (secrets.rs).
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+# https for Steam CDN art and image URLs (schannel, no C compiler needed).
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 windows = { version = "0.62", features = [
     "Foundation",
     "Foundation_Collections",
@@ -41,12 +47,14 @@ windows = { version = "0.62", features = [
     "Win32_Media_Audio_Endpoints",
     "Win32_Security",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_LibraryLoader",
     "Win32_System_Performance",
     "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_Shutdown",
     "Win32_System_SystemServices",
+    "Win32_System_Variant",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",

@@ -12,9 +12,11 @@
 #include "display.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "hub_model.h"
+#include "hubcfg.h"
 #include "net.h"
 #include "ota.h"
 #include "sdkconfig.h"
@@ -301,6 +303,46 @@ static void on_layout(const cJSON *m)
     }
 }
 
+// Colour palette: {"type":"theme","bg":N,"rail":N,"card":N,"card_hi":N,"border":N,"pressed":N,
+// "text":N,"muted":N,"dim":N,"accent":N,"on_accent":N,"accent_pressed":N}, N = 0xRRGGBB as a
+// number. A missing key keeps the default for that slot. A changed palette is saved and the
+// board restarts; an identical one is ignored (the app sends it on every connect).
+static void on_theme(const cJSON *m)
+{
+    hub_theme_t d;
+    ui_theme_defaults(&d);
+    uint32_t *f[] = {&d.bg, &d.rail, &d.card, &d.card_hi, &d.border, &d.pressed,
+                     &d.text, &d.muted, &d.dim, &d.accent, &d.on_accent, &d.accent_pressed};
+    static const char *keys[] = {"bg", "rail", "card", "card_hi", "border", "pressed",
+                                 "text", "muted", "dim", "accent", "on_accent", "accent_pressed"};
+    for (int i = 0; i < 12; i++) {
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(m, keys[i]);
+        if (cJSON_IsNumber(v) && v->valuedouble >= 0 && v->valuedouble <= 0xffffff) *f[i] = (uint32_t)v->valuedouble;
+    }
+    display_lock();
+    ui_set_theme(&d);   // restarts when different
+    display_unlock();
+}
+
+// Location from the app: {"type":"location","city":"Vienna","lat":"48.2082","lon":"16.3738",
+// "tz":"CET-1CEST,M3.5.0,M10.5.0/3","fahrenheit":false,"h24":true}. Saved to NVS; the board
+// restarts when it changed (clock formats, units and the weather URL are read at start).
+// An identical one is ignored (the app sends it on every connect).
+static void on_location(const cJSON *m)
+{
+    char city[48], lat[24], lon[24], tz[72];
+    copy_str(city, sizeof(city), m, "city");
+    copy_str(lat, sizeof(lat), m, "lat");
+    copy_str(lon, sizeof(lon), m, "lon");
+    copy_str(tz, sizeof(tz), m, "tz");
+    if (hubcfg_set_location(city, lat, lon, tz, cJSON_IsTrue(cJSON_GetObjectItem(m, "fahrenheit")),
+                            cJSON_IsTrue(cJSON_GetObjectItem(m, "h24")))) {
+        ESP_LOGI(TAG, "location changed; restarting");
+        vTaskDelay(pdMS_TO_TICKS(300));
+        esp_restart();
+    }
+}
+
 // The PC's display went to sleep or woke: {"type":"pc_power","asleep":true}.
 static void on_pc_power(const cJSON *m)
 {
@@ -520,6 +562,32 @@ static void on_alert(const cJSON *m)
     display_unlock();
 }
 
+// {"type":"hello_ok","version","variant","creds","location":{city,lat,lon,tz,fahrenheit,h24}}:
+// the app picks release images by variant, offers them once creds are "nvs", and starts its
+// Location card from the board's values.
+static void send_hello_ok(void)
+{
+    const hub_cfg_t *c = hubcfg();
+    cJSON *m = cJSON_CreateObject();
+    cJSON_AddStringToObject(m, "type", "hello_ok");
+    cJSON_AddStringToObject(m, "version", esp_app_get_description()->version);
+    cJSON_AddStringToObject(m, "variant", hubcfg_variant());
+    cJSON_AddStringToObject(m, "creds", hubcfg_creds());
+    cJSON *loc = cJSON_AddObjectToObject(m, "location");
+    cJSON_AddStringToObject(loc, "city", c->city);
+    cJSON_AddStringToObject(loc, "lat", c->lat);
+    cJSON_AddStringToObject(loc, "lon", c->lon);
+    cJSON_AddStringToObject(loc, "tz", c->tz);
+    cJSON_AddBoolToObject(loc, "fahrenheit", c->fahrenheit);
+    cJSON_AddBoolToObject(loc, "h24", c->h24);
+    char *text = cJSON_PrintUnformatted(m);
+    if (text) {
+        hub_server_send(text);
+        cJSON_free(text);
+    }
+    cJSON_Delete(m);
+}
+
 static void on_text(int fd, char *text)
 {
     cJSON *m = cJSON_Parse(text);
@@ -533,17 +601,14 @@ static void on_text(int fd, char *text)
     if (strcmp(type, "hello") == 0) {
         char token[64];
         copy_str(token, sizeof(token), m, "token");
-        if (strcmp(token, CONFIG_HUB_TOKEN) == 0) {
+        if (hubcfg_token_ok(token)) {
             if (s_client >= 0 && s_client != fd) {
                 httpd_sess_trigger_close(s_server, s_client);
             }
             s_client = fd;
             s_last_rx_ms = now_ms();
             ESP_LOGI(TAG, "companion connected (fd %d)", fd);
-            char ok[96];
-            snprintf(ok, sizeof(ok), "{\"type\":\"hello_ok\",\"version\":\"%s\"}",
-                     esp_app_get_description()->version);
-            hub_server_send(ok);
+            send_hello_ok();
         } else {
             ESP_LOGW(TAG, "wrong token from fd %d", fd);
             httpd_sess_trigger_close(s_server, fd);
@@ -560,6 +625,8 @@ static void on_text(int fd, char *text)
         else if (strcmp(type, "printer") == 0) on_printer(m);
         else if (strcmp(type, "layout") == 0) on_layout(m);
         else if (strcmp(type, "pc_power") == 0) on_pc_power(m);
+        else if (strcmp(type, "theme") == 0) on_theme(m);
+        else if (strcmp(type, "location") == 0) on_location(m);
         else if (strcmp(type, "home") == 0) on_home(m);
         else if (strcmp(type, "alert") == 0) on_alert(m);
         else if (strcmp(type, "tile_state") == 0) on_tile_state(m);
@@ -658,7 +725,7 @@ static bool token_ok(httpd_req_t *req, char *query, size_t qlen)
     char token[64];
     if (httpd_req_get_url_query_str(req, query, qlen) != ESP_OK ||
         httpd_query_key_value(query, "token", token, sizeof(token)) != ESP_OK ||
-        strcmp(token, CONFIG_HUB_TOKEN) != 0) {
+        !hubcfg_token_ok(token)) {
         httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "bad token");
         return false;
     }

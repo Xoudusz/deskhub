@@ -12,7 +12,7 @@ use crate::pages::{
     DEFAULT_RIGHT_WITH_PRINTER,
 };
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub board: Board,
@@ -20,9 +20,64 @@ pub struct Settings {
     pub pages: Pages,
     pub home: Home,
     pub appearance: Appearance,
+    /// The board's city, coordinates, time zone and units ("location" message).
+    pub location: Location,
     pub ai: Ai,
+    /// Shortcut tiles, in order (config.toml [[tiles]]). At most MAX_TILES.
+    pub tiles: Vec<Tile>,
+    /// Steam, built-in game presets and your own games (config.toml [steam],
+    /// [game_presets], [[games]]).
+    pub games: Games,
     /// config.toml was imported once.
     pub imported: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            board: Board::default(),
+            display: Display::default(),
+            pages: Pages::default(),
+            home: Home::default(),
+            appearance: Appearance::default(),
+            location: Location::default(),
+            ai: Ai::default(),
+            tiles: default_tiles(),
+            games: Games::default(),
+            imported: false,
+        }
+    }
+}
+
+/// Weather location, clock and units of the board. Until `enabled` the app sends nothing and
+/// the board keeps what it stores (from its local build); the UI shows the board's values
+/// (hello_ok) as the starting point. Coordinates are decimal strings ("48.2082").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Location {
+    pub enabled: bool,
+    pub city: String,
+    pub lat: String,
+    pub lon: String,
+    /// POSIX TZ string, e.g. "CET-1CEST,M3.5.0,M10.5.0/3".
+    pub tz: String,
+    pub fahrenheit: bool,
+    pub h24: bool,
+}
+
+impl Default for Location {
+    fn default() -> Self {
+        // The firmware's Kconfig defaults.
+        Self {
+            enabled: false,
+            city: "New York".into(),
+            lat: "40.7128".into(),
+            lon: "-74.0060".into(),
+            tz: "EST5EDT,M3.2.0,M11.1.0".into(),
+            fahrenheit: true,
+            h24: false,
+        }
+    }
 }
 
 /// Claude Code / Codex usage and waiting alerts (config.toml [ai] and [claude]).
@@ -48,6 +103,137 @@ impl Default for Ai {
             idle_alert_seconds: 30,
         }
     }
+}
+
+/// Up to this many shortcut tiles (shortcuts.py MAX_TILES).
+pub const MAX_TILES: usize = 16;
+/// Tile actions (shortcuts.py ACTIONS).
+pub const TILE_ACTIONS: [&str; 7] = ["keys", "run", "open", "media", "volume", "lock", "mic"];
+/// Windows states a tile can light up for (shortcuts.py STATES).
+pub const TILE_STATES: [&str; 2] = ["mic_mute", "speaker_mute"];
+
+/// One shortcut tile on the board.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Tile {
+    pub label: String,
+    /// A Material icon name the firmware knows ("apps" when unknown).
+    pub icon: String,
+    /// "#rrggbb".
+    pub color: String,
+    /// One of TILE_ACTIONS.
+    pub action: String,
+    /// keys: "ctrl+shift+m"; run: a command; open: a path or URL; media: toggle|next|prev;
+    /// volume: up|down|mute; lock and mic: empty.
+    pub target: String,
+    /// Lights the tile while on: "mic_mute", "speaker_mute", "" (never). None = guess
+    /// like shortcuts.py tile_state (volume mute -> speaker_mute, mic -> mic_mute).
+    pub state: Option<String>,
+}
+
+impl Default for Tile {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            icon: "apps".into(),
+            color: "#2b2f3a".into(),
+            action: "keys".into(),
+            target: String::new(),
+            state: None,
+        }
+    }
+}
+
+impl Tile {
+    fn new(label: &str, icon: &str, color: &str, action: &str, target: &str) -> Self {
+        Self {
+            label: label.into(),
+            icon: icon.into(),
+            color: color.into(),
+            action: action.into(),
+            target: target.into(),
+            state: None,
+        }
+    }
+
+    /// The Windows state this tile shows (shortcuts.py tile_state).
+    pub fn effective_state(&self) -> &str {
+        if let Some(st) = &self.state {
+            return TILE_STATES.iter().copied().find(|s| s == st).unwrap_or("");
+        }
+        if self.action == "volume" && self.target == "mute" {
+            "speaker_mute"
+        } else if self.action == "mic"
+            || ["mic", "mic_off", "mic_none"].contains(&self.icon.as_str())
+        {
+            "mic_mute"
+        } else {
+            ""
+        }
+    }
+}
+
+/// The tiles from companion/config.example.toml.
+pub fn default_tiles() -> Vec<Tile> {
+    vec![
+        Tile::new("Mute mic", "mic_off", "#b4413c", "mic", ""),
+        Tile::new("Mute sound", "volume_off", "#3a4256", "volume", "mute"),
+        Tile::new("Vol -", "volume_down", "#3a4256", "volume", "down"),
+        Tile::new("Vol +", "volume_up", "#3a4256", "volume", "up"),
+        Tile::new(
+            "Screenshot",
+            "screenshot_monitor",
+            "#2f6f5e",
+            "keys",
+            "win+shift+s",
+        ),
+        Tile::new("Terminal", "terminal", "#2b2f3a", "run", "wt.exe"),
+        Tile::new("Downloads", "folder", "#8a6d1f", "open", "~/Downloads"),
+        Tile::new("Lock PC", "lock", "#5b3fa0", "lock", ""),
+    ]
+}
+
+/// Games page sources.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Games {
+    /// Read Steam's local files: playing now, recent games, launch.
+    pub steam: bool,
+    /// Recognise popular non-Steam games (game_presets.py) without setup.
+    pub presets: bool,
+    /// Preset names turned off.
+    pub presets_disabled: Vec<String>,
+    /// Your own games ([[games]]); one with a preset's name replaces the preset.
+    pub custom: Vec<CustomGame>,
+}
+
+impl Default for Games {
+    fn default() -> Self {
+        Self {
+            steam: true,
+            presets: true,
+            presets_disabled: Vec::new(),
+            custom: Vec::new(),
+        }
+    }
+}
+
+/// A non-Steam game, watched by process and/or window title (custom_games.py).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomGame {
+    pub name: String,
+    /// Program file names, e.g. "javaw.exe".
+    pub process: Vec<String>,
+    /// Text the command line must contain.
+    #[serde(rename = "match")]
+    pub match_text: String,
+    /// Text a window title must contain.
+    pub title: String,
+    /// A picture file or https URL.
+    pub image: String,
+    /// Program, shortcut, folder or URL the board can start.
+    pub launch: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -161,10 +347,37 @@ impl Default for GridItem {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
     pub theme: Theme,
+    /// The board's colours: the app theme, the board's classic amber look, or a theme of its own.
+    pub board_theme: BoardTheme,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            board_theme: BoardTheme::Same,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BoardTheme {
+    /// Follow the app theme.
+    #[default]
+    Same,
+    /// The firmware's own amber look.
+    Classic,
+    Purple,
+    Blue,
+    Graphite,
+    Midnight,
+    Teal,
+    Rose,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,13 +386,19 @@ pub enum NightStyle {
     #[default]
     Off,
     Clock,
+    /// Stay on with the normal pages, only dimmed to the night brightness.
+    Dim,
 }
+
+/// Night brightness used for "dim" when none is set.
+pub const DIM_DEFAULT: i64 = 20;
 
 impl NightStyle {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Off => "off",
             Self::Clock => "clock",
+            Self::Dim => "dim",
         }
     }
 
@@ -188,6 +407,7 @@ impl NightStyle {
         match s.trim().to_lowercase().as_str() {
             "off" => Some(Self::Off),
             "clock" => Some(Self::Clock),
+            "dim" => Some(Self::Dim),
             _ => None,
         }
     }
@@ -330,6 +550,15 @@ pub struct Status {
     pub firmware: Option<String>,
     /// Unix seconds the link came up.
     pub since: Option<u64>,
+    /// The board's build: "s3", "p4rev1", "p4rev3" (hello_ok; older firmware: None).
+    #[serde(default)]
+    pub variant: Option<String>,
+    /// Where the board keeps Wi-Fi and token: "nvs" (release images work), "seed", "none".
+    #[serde(default)]
+    pub creds: Option<String>,
+    /// The location the board uses now (hello_ok; `enabled` is false).
+    #[serde(default)]
+    pub location: Option<Location>,
 }
 
 impl Status {
@@ -340,6 +569,9 @@ impl Status {
             detail: format!("Looking for {host}"),
             firmware: None,
             since: None,
+            variant: None,
+            creds: None,
+            location: None,
         }
     }
 }
@@ -472,9 +704,77 @@ pub fn import_config_toml(text: &str) -> Result<Settings> {
         }
     }
 
+    if let Some(tiles) = cfg.get("tiles").and_then(Value::as_array) {
+        s.tiles = tiles
+            .iter()
+            .filter(|t| t.is_object())
+            .take(MAX_TILES)
+            .map(|t| {
+                let d = Tile::default();
+                Tile {
+                    label: text_at(t, "label").unwrap_or_default(),
+                    icon: text_at(t, "icon").unwrap_or(d.icon),
+                    color: text_at(t, "color").unwrap_or(d.color),
+                    action: text_at(t, "action").unwrap_or_default(),
+                    target: t.get("target").map(scalar_text).unwrap_or_default(),
+                    state: t.get("state").map(scalar_text),
+                }
+            })
+            .collect();
+    }
+    if let Some(st) = section(&cfg, "steam") {
+        if let Some(v) = st.get("enabled") {
+            s.games.steam = truthy(v);
+        }
+    }
+    if let Some(gp) = section(&cfg, "game_presets") {
+        if let Some(v) = gp.get("enabled") {
+            s.games.presets = truthy(v);
+        }
+        if let Some(list) = gp.get("disabled").and_then(Value::as_array) {
+            s.games.presets_disabled = list
+                .iter()
+                .map(scalar_text)
+                .filter(|n| !n.is_empty())
+                .collect();
+        }
+    }
+    if let Some(games) = cfg.get("games").and_then(Value::as_array) {
+        s.games.custom = games
+            .iter()
+            .filter(|g| g.is_object())
+            .map(|g| CustomGame {
+                name: text_at(g, "name").unwrap_or_default().trim().to_string(),
+                process: match g.get("process") {
+                    Some(Value::Array(a)) => a.iter().map(scalar_text).collect(),
+                    Some(v) => vec![scalar_text(v)],
+                    None => Vec::new(),
+                }
+                .into_iter()
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect(),
+                match_text: text_at(g, "match").unwrap_or_default(),
+                title: text_at(g, "title").unwrap_or_default(),
+                image: text_at(g, "image").unwrap_or_default(),
+                launch: text_at(g, "launch").unwrap_or_default(),
+            })
+            .filter(|g| !g.name.is_empty())
+            .collect();
+    }
+
     s.imported = true;
     s.clamp();
     Ok(s)
+}
+
+/// A TOML scalar as text (numbers too, like Python's str()).
+fn scalar_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
 }
 
 fn section<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
@@ -634,9 +934,12 @@ mod tests {
                 "appearance",
                 "board",
                 "display",
+                "games",
                 "home",
                 "imported",
-                "pages"
+                "location",
+                "pages",
+                "tiles"
             ]
         );
         assert_eq!(v["display"]["pc_sleep"], "off");
@@ -915,5 +1218,59 @@ mod tests {
         // Settings saved before presets existed still load.
         let old: Settings = serde_json::from_str(r#"{"home": {"header": true}}"#).unwrap();
         assert!(old.home.presets.is_empty());
+    }
+
+    #[test]
+    fn imports_tiles_steam_and_games() {
+        let s = import_config_toml(
+            r#"
+[steam]
+enabled = false
+[game_presets]
+enabled = true
+disabled = ["Roblox"]
+[[games]]
+name = "Minecraft"
+process = "javaw.exe"
+match = "minecraft"
+launch = "C:/mc.exe"
+[[games]]
+name = "GTNH"
+title = "GT: New Horizons"
+process = ["java.exe", "javaw.exe"]
+[[tiles]]
+label = "Mic"
+icon = "mic_off"
+action = "mic"
+[[tiles]]
+label = "F13"
+action = "keys"
+target = "f13"
+state = ""
+"#,
+        )
+        .unwrap();
+        assert!(!s.games.steam);
+        assert_eq!(s.games.presets_disabled, ["Roblox"]);
+        assert_eq!(s.games.custom.len(), 2);
+        assert_eq!(s.games.custom[0].process, ["javaw.exe"]);
+        assert_eq!(s.games.custom[0].match_text, "minecraft");
+        assert_eq!(s.games.custom[1].process, ["java.exe", "javaw.exe"]);
+        assert_eq!(s.tiles.len(), 2);
+        assert_eq!(s.tiles[0].color, "#2b2f3a");
+        assert_eq!(s.tiles[0].effective_state(), "mic_mute");
+        assert_eq!(s.tiles[1].effective_state(), "");
+        // match is the JSON key, like config.toml.
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["games"]["custom"][0]["match"], "minecraft");
+    }
+
+    #[test]
+    fn default_tiles_and_state_guess() {
+        let s = Settings::default();
+        assert_eq!(s.tiles.len(), 8);
+        assert_eq!(s.tiles[1].effective_state(), "speaker_mute");
+        assert_eq!(s.tiles[2].effective_state(), "");
+        assert!(s.games.steam && s.games.presets);
     }
 }

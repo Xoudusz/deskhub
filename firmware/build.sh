@@ -8,7 +8,9 @@
 # Read the chip revision with: esptool --chip esp32p4 chip_id
 #
 # Wi-Fi, token, city and the other Desk Hub settings come from sdkconfig.local
-# if it exists (git-ignored; start from sdkconfig.local.example).
+# if it exists (git-ignored; start from sdkconfig.local.example). They are a seed:
+# the board copies them into its storage (NVS) on first boot. Release images are
+# built without sdkconfig.local and keep what the board already stores.
 # Output: out/<variant>/ with deskhub.bin (for Wi-Fi updates) and
 # deskhub-merged.bin (flash at 0x0 over USB).
 set -euo pipefail
@@ -30,7 +32,8 @@ fi
 build="build/$variant"
 # Firmware version shown by the board and the desktop app: git describe of this
 # checkout, computed here because the container has no access to .git.
-version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Only firmware tags count (the desktop app has its own desktop-v* tags).
+version=$(git describe --tags --match 'firmware-v*' --always --dirty 2>/dev/null || echo dev)
 # Start each build from the defaults files, so edits to sdkconfig.local (or the
 # defaults) always take effect. The old sdkconfig is removed inside the
 # container because the container owns the build directory.
@@ -38,8 +41,8 @@ docker run --rm \
     -v "$PWD":/project -w /project \
     -e IDF_TARGET="$target" -e HOME=/tmp \
     "$IDF_IMAGE" \
-    bash -c 'rm -f "$1/sdkconfig" && idf.py -B "$1" -D SDKCONFIG="$1/sdkconfig" -D SDKCONFIG_DEFAULTS="$2" -D PROJECT_VER="$3" build merge-bin -o deskhub-merged.bin' \
-        _ "$build" "$defaults" "$version"
+    bash -c 'rm -f "$1/sdkconfig" && idf.py -B "$1" -D SDKCONFIG="$1/sdkconfig" -D SDKCONFIG_DEFAULTS="$2" -D PROJECT_VER="$3" -D HUB_VARIANT="$4" build merge-bin -o deskhub-merged.bin' \
+        _ "$build" "$defaults" "$version" "$variant"
 
 mkdir -p "out/$variant"
 cp "$build/deskhub.bin" "$build/deskhub-merged.bin" "out/$variant/"

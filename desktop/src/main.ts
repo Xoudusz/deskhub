@@ -6,12 +6,13 @@ import "./styles.css";
 import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
-  api, win, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
+  api, win, TAURI, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
+  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 
-type SectionId = "status" | "display" | "pages" | "ai" | "appearance" | "connection" | "about";
+type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
 type Cell = Settings["home"]["grid"][number];
 
@@ -19,13 +20,18 @@ const SECTIONS: [SectionId, string, string][] = [
   ["status", "gauge", "Status"],
   ["display", "sun", "Display"],
   ["pages", "layout-grid", "Pages"],
+  ["shortcuts", "zap", "Shortcuts"],
+  ["games", "gamepad", "Games"],
   ["ai", "sparkles", "AI agents"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
   ["about", "info", "About"],
 ];
 const THEMES: [string, string][] = [
-  ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["midnight", "Midnight"], ["teal", "Teal"], ["rose", "Rose"],
+  ["midnight", "Midnight (default)"], ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["teal", "Teal"], ["rose", "Rose"],
+];
+const BOARD_THEMES: [string, string][] = [
+  ["same", "Same as app"], ["classic", "Classic amber"], ...THEMES.map(([k, v]): [string, string] => [k, v.replace(" (default)", "")]),
 ];
 const STATE_TEXT: Record<Status["state"], string> = { connected: "Connected", searching: "Searching", refused: "Refused", stopped: "Stopped" };
 const DOT: Record<Status["state"], string> = { connected: "good", searching: "warn", refused: "bad", stopped: "" };
@@ -97,6 +103,14 @@ function renderNav() {
 }
 
 async function save(patch: SettingsPatch) {
+  // Apply locally first (same one-level merge as Rust merge_patch), so a second edit
+  // before the reply builds on this one instead of reverting it.
+  const local = S as unknown as Record<string, unknown>;
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    const cur = local[k];
+    local[k] = v && typeof v === "object" && !Array.isArray(v) && cur && typeof cur === "object"
+      ? { ...(cur as object), ...(v as object) } : v;
+  }
   try {
     S = await api.setSettings(patch);
   } catch (err) {
@@ -117,12 +131,20 @@ function saveLater(key: string, patch: SettingsPatch) {
 }
 
 // ---- live preview ----
+// The last board picture: shown at once when Status opens (and while offline) instead
+// of an empty box until the next screenshot arrives.
+let lastShot = (() => { try { return localStorage.getItem("lastShot") ?? ""; } catch { return ""; } })();
+
 function refreshShot() {
   const img = document.getElementById("shot") as HTMLImageElement | null;
   if (!img || shotBusy || section !== "status" || st.state !== "connected" || document.visibilityState !== "visible") return;
   shotBusy = true;
   api.boardScreenshot()
-    .then(url => { img.src = url; })
+    .then(url => {
+      img.src = url;
+      lastShot = url;
+      try { localStorage.setItem("lastShot", url); } catch { /* full: keep it in memory only */ }
+    })
     .catch(() => undefined)
     .finally(() => { shotBusy = false; });
 }
@@ -148,6 +170,8 @@ function sectionHtml(): string {
     case "status": return statusHtml();
     case "display": return displayHtml();
     case "pages": return pagesHtml();
+    case "shortcuts": return shortcutsHtml();
+    case "games": return gamesHtml();
     case "ai": return aiHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
@@ -164,8 +188,10 @@ function statusHtml(): string {
     row("Connected since", st.since ? esc(new Date(st.since * 1000).toLocaleString()) : "Not yet"),
   ].join(""));
   const body = on
-    ? `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"></div>`
-    : `<div class="prev offline">Board offline</div>`;
+    ? `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"${lastShot ? ` src="${lastShot}"` : ""}></div>`
+    : lastShot
+      ? `<div class="prev offline"><img class="stale" src="${lastShot}" alt="Last board screen" draggable="false"><span>Board offline: last picture</span></div>`
+      : `<div class="prev offline">Board offline</div>`;
   return board + card("Live preview", "Tap the picture to press the board", `<div class="swr swsl">${body}</div>`);
 }
 
@@ -183,15 +209,59 @@ function displayHtml(): string {
           row("Until", `<input type="time" data-k="nightTo" value="${esc(to)}">`),
         ]
       : []),
-    row("Night style", select(`data-k="nightStyle"`, [["off", "Screen off"], ["clock", "Clock"]], d.night_style)),
-    slider("nightBrightness", "Night brightness", 0, 100, d.night_brightness, "0 = screen off or clock"),
+    row("Night style", select(`data-k="nightStyle"`, [["off", "Screen off"], ["clock", "Clock"], ["dim", "Dim only"]], d.night_style),
+      d.night_style === "dim" ? "Pages stay as they are, just darker" : ""),
+    slider("nightBrightness", "Night brightness", d.night_style === "dim" ? 1 : 0, 100,
+      d.night_style === "dim" && d.night_brightness < 1 ? 20 : d.night_brightness,
+      d.night_style === "dim" ? "How bright the board stays at night" : "0 = screen off or clock"),
   ].join(""));
   const pc = card("PC and navigation", "", [
     row("When the PC sleeps", select(`data-k="pcSleep"`, [["off", "Screen off"], ["clock", "Clock"], ["none", "Do nothing"]], d.pc_sleep)),
     row("Navigation bar", select(`data-k="nav"`, [["left", "Left"], ["right", "Right"], ["bottom", "Bottom"]], S.pages.nav),
       "The board restarts when this changes"),
   ].join(""));
-  return brightness + clock + night + pc;
+  return brightness + clock + night + pc + locationHtml();
+}
+
+/** POSIX time zones for the board (Kconfig HUB_TZ format). */
+const TIME_ZONES: [string, string][] = [
+  ["CET-1CEST,M3.5.0,M10.5.0/3", "Vienna, Berlin, Paris"],
+  ["GMT0BST,M3.5.0/1,M10.5.0", "London, Dublin"],
+  ["EET-2EEST,M3.5.0/3,M10.5.0/4", "Helsinki, Athens"],
+  ["EST5EDT,M3.2.0,M11.1.0", "New York"],
+  ["CST6CDT,M3.2.0,M11.1.0", "Chicago"],
+  ["MST7MDT,M3.2.0,M11.1.0", "Denver"],
+  ["PST8PDT,M3.2.0,M11.1.0", "Los Angeles"],
+  ["UTC0", "UTC"],
+];
+
+/** What the Location card edits: the app's copy once set, else what the board reports. */
+function loc(): Location {
+  return S.location.enabled ? S.location : (st.location ?? S.location);
+}
+
+function saveLocation(change: Partial<Location>) {
+  void save({ location: { ...loc(), ...change, enabled: true } });
+}
+
+function locationHtml(): string {
+  if (!S.location.enabled && !st.location) {
+    return card("Location", "Weather, clock and units on the board",
+      text(st.state === "connected" ? "This board's firmware doesn't report its location; update it first." : "Connect to the board to see and change its location."));
+  }
+  const l = loc();
+  const known = TIME_ZONES.some(([v]) => v === l.tz);
+  const zones: [string, string][] = known ? TIME_ZONES : [...TIME_ZONES, [l.tz, `Other: ${l.tz}`]];
+  return card("Location", "Weather, clock and units on the board", [
+    row("City", `<input class="txt" data-k="locCity" value="${esc(l.city)}" spellcheck="false">`, "Shown on the weather page"),
+    row("Latitude", `<input class="txt" data-k="locLat" value="${esc(l.lat)}" placeholder="48.2082" spellcheck="false">`),
+    row("Longitude", `<input class="txt" data-k="locLon" value="${esc(l.lon)}" placeholder="16.3738" spellcheck="false">`,
+      "Decimal degrees, for the weather forecast"),
+    row("Time zone", select(`data-k="locTz"`, zones, l.tz)),
+    row("24-hour clock", tgl(`data-k="locH24"`, l.h24)),
+    row("Fahrenheit and mph", tgl(`data-k="locF"`, l.fahrenheit)),
+    text(S.location.enabled ? "The board restarts when these change." : "These are the board's current values; changing one makes the app manage them."),
+  ].join(""));
 }
 
 /** Enabled pages in navigation order, Home first. */
@@ -231,7 +301,7 @@ function pagesHtml(): string {
     ...S.home.presets.map((p, i) => [`u${i}`, `${p.name} (yours)`] as [string, string]),
   ];
   const own = presetSel.startsWith("u");
-  const home = card("Home screen", "5 columns by 3 rows. Click a block to resize it.", [
+  const home = card("Home screen", "5 columns by 3 rows. Drag a block to move it, its corner to resize it.", [
     row("Layout",
       select(`data-k="homePreset"`, presetOpts, presetSel) +
       `<button type="button" data-act="preset-apply"${presetSel ? "" : " disabled"}>Apply</button>` +
@@ -255,9 +325,12 @@ function gridHtml(): string {
   const blocks = S.home.grid.map((c, i) => {
     for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) occupied.add(`${x},${y}`);
     const label = WIDGET_LABELS[c.widget as Widget] ?? c.widget;
+    const sz = HOME_SIZES[c.widget as Widget];
+    const resizable = sz && (sz.w[0] < sz.w[1] || sz.h[0] < sz.h[1]);
     return `<div class="hblock${i === selBlock ? " sel" : ""}" data-act="grid-select" data-idx="${i}" style="grid-column:${c.x + 1} / span ${c.w};grid-row:${c.y + 1} / span ${c.h}">` +
       `<span>${esc(label)}<small>${c.w} x ${c.h}</small></span>` +
-      `<button type="button" class="ib" data-act="grid-remove" data-idx="${i}" title="Remove">${icon("x", 11)}</button></div>`;
+      `<button type="button" class="ib" data-act="grid-remove" data-idx="${i}" title="Remove">${icon("x", 11)}</button>` +
+      (resizable ? `<div class="hres" title="Drag to resize"></div>` : "") + `</div>`;
   }).join("");
   const cells: string[] = [];
   for (let y = 0; y < GRID_ROWS; y++) {
@@ -291,12 +364,102 @@ let selBlock = -1;
 let presetSel = "";
 let presetName = "";
 
-/** Whether block `i` can take size w x h at its spot: inside the grid, no overlap. */
-function sizeFits(i: number, w: number, h: number): boolean {
-  const c = S.home.grid[i];
-  if (c.x + w > GRID_COLS || c.y + h > GRID_ROWS) return false;
-  return S.home.grid.every((o, j) => j === i || !(o.x < c.x + w && c.x < o.x + o.w && o.y < c.y + h && c.y < o.y + o.h));
+/** Whether block `i` can sit at `c`: inside the grid, no overlap with the other blocks. */
+function fits(i: number, c: Cell): boolean {
+  if (c.x < 0 || c.y < 0 || c.x + c.w > GRID_COLS || c.y + c.h > GRID_ROWS) return false;
+  return S.home.grid.every((o, j) => j === i || !(o.x < c.x + c.w && c.x < o.x + o.w && o.y < c.y + c.h && c.y < o.y + o.h));
 }
+
+/** Whether block `i` can take size w x h at its spot. */
+function sizeFits(i: number, w: number, h: number): boolean {
+  return fits(i, { ...S.home.grid[i], w, h });
+}
+
+// ---- Home builder: drag a block to move it, its corner handle to resize it ----
+type Drag = { i: number; el: HTMLElement; grid: HTMLElement; resize: boolean; col: number; row: number; orig: Cell; next: Cell };
+let drag: Drag | null = null;
+/** A drag ends with a click on the block; that click must not toggle the selection. */
+let dragEndedAt = 0;
+
+/** The grid cell under the pointer, clamped to the grid. */
+function cellAt(grid: HTMLElement, e: PointerEvent): [number, number] {
+  const r = grid.getBoundingClientRect();
+  const col = Math.floor(((e.clientX - r.left) / r.width) * GRID_COLS);
+  const row = Math.floor(((e.clientY - r.top) / r.height) * GRID_ROWS);
+  return [Math.max(0, Math.min(GRID_COLS - 1, col)), Math.max(0, Math.min(GRID_ROWS - 1, row))];
+}
+
+const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+main.addEventListener("pointerdown", e => {
+  const t = e.target as HTMLElement;
+  if (drag || e.button !== 0 || t.closest(".ib")) return;
+  const el = t.closest<HTMLElement>(".hblock");
+  const grid = el?.closest<HTMLElement>(".hgrid");
+  if (!el || !grid) return;
+  const i = Number(el.dataset.idx);
+  const c = S.home.grid[i];
+  if (!c) return;
+  const [col, row] = cellAt(grid, e);
+  drag = { i, el, grid, resize: !!t.closest(".hres"), col, row, orig: { ...c }, next: { ...c } };
+  el.setPointerCapture(e.pointerId);
+  el.classList.add("dragging");
+  e.preventDefault();
+});
+
+main.addEventListener("pointermove", e => {
+  if (!drag) return;
+  // A re-render (settings changed elsewhere) replaced the grid: give up this drag.
+  if (!drag.el.isConnected) {
+    drag = null;
+    return;
+  }
+  const [col, row] = cellAt(drag.grid, e);
+  const dc = col - drag.col, dr = row - drag.row;
+  const o = drag.orig;
+  let n: Cell;
+  if (drag.resize) {
+    const sz = HOME_SIZES[o.widget as Widget];
+    n = {
+      ...o,
+      w: clampN(o.w + dc, sz.w[0], Math.min(sz.w[1], GRID_COLS - o.x)),
+      h: clampN(o.h + dr, sz.h[0], Math.min(sz.h[1], GRID_ROWS - o.y)),
+    };
+  } else {
+    n = { ...o, x: clampN(o.x + dc, 0, GRID_COLS - o.w), y: clampN(o.y + dr, 0, GRID_ROWS - o.h) };
+  }
+  if (n.x === drag.next.x && n.y === drag.next.y && n.w === drag.next.w && n.h === drag.next.h) return;
+  drag.next = n;
+  drag.el.style.gridColumn = `${n.x + 1} / span ${n.w}`;
+  drag.el.style.gridRow = `${n.y + 1} / span ${n.h}`;
+  drag.el.classList.toggle("bad", !fits(drag.i, n));
+  const small = drag.el.querySelector("small");
+  if (small) small.textContent = `${n.w} x ${n.h}`;
+});
+
+function endDrag(cancel: boolean) {
+  const d = drag;
+  if (!d) return;
+  drag = null;
+  d.el.classList.remove("dragging");
+  const { orig: o, next: n } = d;
+  const moved = n.x !== o.x || n.y !== o.y || n.w !== o.w || n.h !== o.h;
+  if (!moved) return;   // a plain click: selects the block
+  dragEndedAt = Date.now();
+  // The grid changed under the drag (another window, a preset): don't save a stale block.
+  const cur = S.home.grid[d.i];
+  const same = d.el.isConnected && cur && cur.widget === o.widget && cur.x === o.x && cur.y === o.y && cur.w === o.w && cur.h === o.h;
+  if (!cancel && same && fits(d.i, n)) {
+    selBlock = d.i;
+    homeNote = "";
+    void save({ home: { grid: S.home.grid.map((c, j) => (j === d.i ? n : c)) } });
+  } else {
+    render(true);       // back to where it was
+  }
+}
+
+main.addEventListener("pointerup", () => endDrag(false));
+main.addEventListener("pointercancel", () => endDrag(true));
 
 function sizeRow(): string {
   const c = S.home.grid[selBlock];
@@ -351,6 +514,96 @@ function deletePreset() {
   void save({ home: { presets: S.home.presets.filter((_, j) => j !== i) } });
 }
 
+// ---- Shortcuts: tile list + editor for the selected tile ----
+let selTile = 0;
+
+function saveTiles(tiles: Tile[]) {
+  void save({ tiles });
+}
+
+function shortcutsHtml(): string {
+  const tiles = S.tiles;
+  if (selTile >= tiles.length) selTile = Math.max(0, tiles.length - 1);
+  const list = tiles.map((t, i) =>
+    `<button type="button" class="tile${i === selTile ? " sel" : ""}" data-act="tile-select" data-idx="${i}" style="--tc:${esc(t.color)}">` +
+    `<span>${esc(t.label || "(no label)")}</span><small>${esc(TILE_ACTIONS.find(a => a[0] === t.action)?.[1] ?? t.action)}</small></button>`,
+  ).join("");
+  const add = tiles.length < MAX_TILES
+    ? `<button type="button" class="tile add" data-act="tile-add">${icon("plus", 14)}Add</button>` : "";
+  const grid = card("Tiles", `The Shortcuts page on the board. Up to ${MAX_TILES}; 2, 4, 6, 8, 12 or 16 fill an even grid.`,
+    `<div class="tiles">${list}${add}</div>` +
+    row("Reset", `<button type="button" data-act="tiles-reset">${icon("refresh-cw", 13)}Example tiles</button>`,
+      "Mic, sound, volume, screenshot, terminal, downloads, lock"));
+  const t = tiles[selTile];
+  if (!t) return grid;
+  const act = TILE_ACTIONS.find(a => a[0] === t.action) ?? TILE_ACTIONS[0];
+  const needsTarget = !["lock", "mic"].includes(t.action);
+  const stateVal = t.state === null ? "auto" : t.state === "" ? "none" : t.state;
+  const editor = card(`Tile ${selTile + 1}`, "Changes apply right away", [
+    row("Label", `<input class="txt" data-k="tileLabel" value="${esc(t.label)}" maxlength="30" spellcheck="false">`),
+    row("Icon", select(`data-k="tileIcon"`, TILE_ICONS.map(n => [n, n.replace(/_/g, " ")] as [string, string]), t.icon)),
+    row("Colour", `<input type="color" class="color" data-k="tileColor" value="${esc(t.color)}">`),
+    row("Action", select(`data-k="tileAction"`, TILE_ACTIONS.map(a => [a[0], a[1]] as [string, string]), t.action)),
+    ...(needsTarget ? [row("Target", `<input class="txt" data-k="tileTarget" value="${esc(t.target)}" spellcheck="false">`, esc(act[2]))] : []),
+    row("Lights up", select(`data-k="tileState"`, [["auto", "Automatic"], ["mic_mute", "While the mic is muted"],
+      ["speaker_mute", "While the sound is muted"], ["none", "Never"]], stateVal)),
+    row("Position",
+      `<span class="updown">` +
+      `<button type="button" class="ib" data-act="tile-move" data-d="-1" title="Move left"${selTile === 0 ? " disabled" : ""}>${icon("chevron-up", 12)}</button>` +
+      `<button type="button" class="ib" data-act="tile-move" data-d="1" title="Move right"${selTile === tiles.length - 1 ? " disabled" : ""}>${icon("chevron-down", 12)}</button></span>` +
+      `<button type="button" data-act="tile-remove">${icon("x", 13)}Remove</button>`),
+  ].join(""));
+  return grid + editor;
+}
+
+function tilePatch(change: Partial<Tile>) {
+  saveTiles(S.tiles.map((t, i) => (i === selTile ? { ...t, ...change } : t)));
+}
+
+// ---- Games: Steam, presets, your own games ----
+let selGame = -1;
+
+function gamesHtml(): string {
+  const g = S.games;
+  const sources = card("Sources", "What the board's Games page shows", [
+    row("Steam", tgl(`data-k="gamesSteam"`, g.steam), "Playing now, recent games and launching them. Needs Steam installed"),
+    row("Popular games", tgl(`data-k="gamesPresets"`, g.presets), "League, VALORANT, Fortnite, Minecraft and more, without setup"),
+  ].join(""));
+  const presets = g.presets
+    ? card("Popular games", "Turn off the ones you don't want",
+      GAME_PRESETS.map(n => row(esc(n), tgl(`data-k="presetGame" data-name="${esc(n)}"`, !g.presets_disabled.includes(n)))).join(""))
+    : "";
+  const list = g.custom.map((c, i) =>
+    row(esc(c.name || "(no name)"),
+      `<button type="button" data-act="game-edit" data-idx="${i}">${icon(i === selGame ? "chevron-up" : "chevron-down", 13)}${i === selGame ? "Close" : "Edit"}</button>` +
+      `<button type="button" class="ib" data-act="game-remove" data-idx="${i}" title="Remove">${icon("x", 12)}</button>`,
+      esc(c.process.join(", ") || c.title)) + (i === selGame ? gameEditor(c) : "")).join("");
+  const own = card("Your games", "Games that aren't on Steam: found by program name or window title",
+    (list || text("None yet.")) +
+    row("Add a game", `<button type="button" data-act="game-add">${icon("plus", 13)}Add</button>`));
+  return sources + own + presets;
+}
+
+function gameEditor(c: CustomGame): string {
+  const f = (k: string, label: string, v: string, hint: string) =>
+    row(label, `<input class="txt" data-k="${k}" value="${esc(v)}" spellcheck="false">`, hint);
+  return `<div class="gedit">` + [
+    f("gameName", "Name", c.name, "Shown on the board; a popular game's name replaces it"),
+    f("gameProcess", "Program", c.process.join(", "), "File name from Task Manager > Details, e.g. javaw.exe (comma for several)"),
+    f("gameMatch", "Command line has", c.match, "Optional, e.g. minecraft for javaw.exe"),
+    f("gameTitle", "Window title has", c.title, "Optional; with a title the program is optional"),
+    row("Picture",
+      `<input class="txt" data-k="gameImage" value="${esc(c.image)}" spellcheck="false">` +
+      `<button type="button" data-act="game-image">Browse...</button>`,
+      "Optional: shown on the board instead of the initials"),
+    f("gameLaunch", "Start with", c.launch, "Optional: a program, shortcut, folder or URL"),
+  ].join("") + `</div>`;
+}
+
+function gamePatch(change: Partial<CustomGame>) {
+  void save({ games: { custom: S.games.custom.map((c, i) => (i === selGame ? { ...c, ...change } : c)) } });
+}
+
 // Claude Code wiring, fetched when the AI section opens.
 let claude: ClaudeState | null = null;
 let claudeNote = "";
@@ -397,7 +650,11 @@ async function toggleClaude() {
 }
 
 function appearanceHtml(): string {
-  return card("Theme", "Applies at once", row("Colour theme", select(`data-k="theme"`, THEMES, S.appearance.theme)));
+  return card("Theme", "Applies at once", [
+    row("Colour theme", select(`data-k="theme"`, THEMES, S.appearance.theme)),
+    row("Board colours", select(`data-k="boardTheme"`, BOARD_THEMES, S.appearance.board_theme),
+      "The board restarts once when its colours change"),
+  ].join(""));
 }
 
 function connectionHtml(): string {
@@ -410,12 +667,79 @@ function connectionHtml(): string {
       "Must match the token on the board"),
     row("Config file", `<button type="button" data-act="import">${icon("refresh-cw", 13)}Import from config.toml</button>`,
       S.imported ? "Already imported" : "Copies host and token from the Python companion's config"),
+  ].join("")) + firmwareHtml();
+}
+
+function firmwareHtml(): string {
+  const connected = st.state === "connected";
+  if (connected && fwCheckFor !== st.firmware) void refreshFwCheck();
+  const c = fwCheck;
+  const hint = fwBusy ? "Tap Install on the board within a minute"
+    : !connected ? "Connect to the board first"
+    : c?.blocked ?? c?.error ?? (c?.update_available ? `Version ${c.latest} is ready; the board asks before installing`
+      : c?.latest ? "The board is up to date" : "Checking GitHub...");
+  return card("Firmware", "Board updates from GitHub releases", [
+    row("Board", `<span>${esc(st.firmware ?? "-")}${st.variant ? ` <span class="muted">(${esc(st.variant)})</span>` : ""}</span>`),
+    row("Newest release", `<span>${esc(c?.latest ?? "-")}</span>` +
+      `<button type="button" class="ib" data-act="fw-recheck" title="Check again"${fwChecking || !connected ? " disabled" : ""}>${icon("refresh-cw", 13)}</button>`),
+    row(fwBusy ? "Updating..." : "Update",
+      `<button type="button" data-act="firmware-github"${fwBusy || !connected || !c?.update_available ? " disabled" : ""}>${icon("refresh-cw", 13)}Update board</button>`,
+      hint),
+    row("From a file",
+      `<button type="button" data-act="firmware"${fwBusy || !connected ? " disabled" : ""}>Choose deskhub.bin</button>`,
+      "A local build (out/<board>/deskhub.bin, not the merged image)"),
+    ...(fwNote ? [text(esc(fwNote))] : []),
   ].join(""));
 }
 
+// Newest release for the connected board; checked again whenever its firmware version changes.
+let fwCheck: FirmwareCheck | null = null;
+let fwCheckFor: string | null | undefined;
+let fwChecking = false;
+
+async function refreshFwCheck() {
+  fwCheckFor = st.firmware;
+  fwChecking = true;
+  try {
+    fwCheck = await api.firmwareCheck();
+  } catch (err) {
+    fwCheck = { latest: null, update_available: false, blocked: null, error: String(err) };
+  }
+  fwChecking = false;
+  if (section === "connection") render(true);
+}
+
+// Firmware upload state (Connection section).
+let fwBusy = false;
+let fwNote = "";
+
+async function updateFirmware(fromGithub = false) {
+  fwBusy = true;
+  fwNote = "";
+  render(true);
+  try {
+    const answer = fromGithub ? await api.boardFirmwareGithub() : await api.boardFirmware();
+    fwNote = answer.includes("installed") ? "Installed. The board restarts and reconnects in a few seconds." : answer;
+  } catch (err) {
+    const msg = String(err);
+    fwNote = msg.includes("No file chosen") ? "" : `Not installed: ${msg}`;
+  }
+  fwBusy = false;
+  render(true);
+}
+
+/** Start with Windows, as Windows reports it. Busy: a change is on its way (one at a time). */
+let autostart = true;
+let autostartBusy = false;
+let autostartNote = "";
+
 function aboutHtml(): string {
   return card("Desk Hub", "Board companion for Windows", [
-    row("Version", `<span>${esc(version)}</span>`),
+    row("Version", `<span>${esc(version)}</span>`, TAURI ? esc(aboutUpdate) : ""),
+    row("Start with Windows", tgl(`data-k="autostart"`, autostart, autostartBusy),
+      autostartNote || "Hidden in the tray, so the board stays connected"),
+    TAURI ? row("Updates", `<button type="button" data-act="update-check"${updChecking ? " disabled" : ""}>${icon("refresh-cw", 13)}Check now</button>`,
+      "New versions download in the background; the button at the top installs them") : "",
     text("Replaces the Python companion for media, PC stats, Claude usage, shortcuts and games."),
     text("Calendar, printers, internet and GitHub still need the Python companion. Don't run both at once."),
   ].join(""));
@@ -466,15 +790,56 @@ async function act(el: HTMLElement) {
     case "preset-delete": deletePreset(); return;
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
+    case "tile-select": selTile = Number(el.dataset.idx); render(true); return;
+    case "tile-add": {
+      const tiles = [...S.tiles, { label: "New tile", icon: "apps", color: "#2b2f3a", action: "keys" as TileAction, target: "", state: null }];
+      selTile = tiles.length - 1;
+      saveTiles(tiles);
+      return;
+    }
+    case "tile-remove": saveTiles(S.tiles.filter((_, i) => i !== selTile)); return;
+    case "tile-move": {
+      const to = selTile + Number(el.dataset.d);
+      if (to < 0 || to >= S.tiles.length) return;
+      const tiles = [...S.tiles];
+      [tiles[selTile], tiles[to]] = [tiles[to], tiles[selTile]];
+      selTile = to;
+      saveTiles(tiles);
+      return;
+    }
+    case "tiles-reset": selTile = 0; saveTiles(EXAMPLE_TILES.map(t => ({ ...t }))); return;
+    case "game-edit": { const i = Number(el.dataset.idx); selGame = selGame === i ? -1 : i; render(true); return; }
+    case "game-remove": {
+      const i = Number(el.dataset.idx);
+      selGame = -1;
+      void save({ games: { custom: S.games.custom.filter((_, j) => j !== i) } });
+      return;
+    }
+    case "game-add": {
+      const custom = [...S.games.custom, { name: "", process: [], match: "", title: "", image: "", launch: "" }];
+      selGame = custom.length - 1;
+      void save({ games: { custom } });
+      return;
+    }
     case "step": stepSlider(el.dataset.slider as SliderKey, Number(el.dataset.d)); return;
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
     case "import": await importConfig(); return;
+    case "update-check": checkUpdates(); return;
+    case "firmware": await updateFirmware(); return;
+    case "firmware-github": await updateFirmware(true); return;
+    case "fw-recheck": render(true); await refreshFwCheck(); return;
+    case "game-image": {
+      const path = await api.pickImage();
+      if (path) gamePatch({ image: path });
+      return;
+    }
   }
 }
 
 main.addEventListener("click", e => {
   const t = e.target as HTMLElement;
+  if (Date.now() - dragEndedAt < 250 && t.closest(".hblock") && !t.closest(".ib")) return;
   if (t.id === "shot") {
     tap(e as MouseEvent, t as HTMLImageElement);
     return;
@@ -518,11 +883,29 @@ main.addEventListener("change", e => {
     case "nav":
       void save({ pages: { nav: t.value as Settings["pages"]["nav"] } });
       return;
+    case "boardTheme":
+      void save({ appearance: { board_theme: t.value as Settings["appearance"]["board_theme"] } });
+      return;
     case "theme":
       S.appearance.theme = t.value as Settings["appearance"]["theme"];
       applyTheme();
       void save({ appearance: { theme: S.appearance.theme } });
       return;
+    case "locCity": {
+      const city = t.value.trim();
+      if (city) saveLocation({ city });
+      else render(true);
+      return;
+    }
+    case "locLat":
+    case "locLon": {
+      const v = t.value.trim();
+      const max = k === "locLat" ? 90 : 180;
+      if (/^-?\d{1,3}(\.\d+)?$/.test(v) && Math.abs(Number(v)) <= max) saveLocation(k === "locLat" ? { lat: v } : { lon: v });
+      else render(true);
+      return;
+    }
+    case "locTz": saveLocation({ tz: t.value }); return;
     case "host": {
       const host = t.value.trim();
       if (host) void save({ board: { host } });
@@ -541,6 +924,26 @@ main.addEventListener("change", e => {
     case "homeHeader":
       void save({ home: { header: on } });
       return;
+    case "tileLabel": tilePatch({ label: t.value.slice(0, 30) }); return;
+    case "tileIcon": tilePatch({ icon: t.value }); return;
+    case "tileColor": tilePatch({ color: t.value }); return;
+    case "tileAction": tilePatch({ action: t.value as TileAction, target: "" }); return;
+    case "tileTarget": tilePatch({ target: t.value.trim() }); return;
+    case "tileState": tilePatch({ state: t.value === "auto" ? null : t.value === "none" ? "" : t.value }); return;
+    case "gamesSteam": void save({ games: { steam: on } }); return;
+    case "gamesPresets": void save({ games: { presets: on } }); return;
+    case "presetGame": {
+      const n = t.dataset.name ?? "";
+      const off = S.games.presets_disabled.filter(x => x !== n);
+      void save({ games: { presets_disabled: on ? off : [...off, n] } });
+      return;
+    }
+    case "gameName": gamePatch({ name: t.value.trim() }); return;
+    case "gameProcess": gamePatch({ process: t.value.split(",").map(p => p.trim()).filter(Boolean) }); return;
+    case "gameMatch": gamePatch({ match: t.value.trim() }); return;
+    case "gameTitle": gamePatch({ title: t.value.trim() }); return;
+    case "gameImage": gamePatch({ image: t.value.trim() }); return;
+    case "gameLaunch": gamePatch({ launch: t.value.trim() }); return;
     case "homePreset":
       presetSel = t.value;
       render(true);
@@ -554,6 +957,16 @@ main.addEventListener("change", e => {
       if (c) resizeBlock(k === "blockW" ? Number(t.value) : c.w, k === "blockH" ? Number(t.value) : c.h);
       return;
     }
+    case "locH24": saveLocation({ h24: on }); return;
+    case "autostart":
+      if (autostartBusy) return;
+      autostartBusy = true;
+      autostartNote = "";
+      void api.autostartSet(on)
+        .then(v => { autostart = v; }, err => { autostartNote = `Windows refused: ${err}`; })
+        .finally(() => { autostartBusy = false; render(true); });
+      return;
+    case "locF": saveLocation({ fahrenheit: on }); return;
     case "clockSeconds":
       void save({ display: { clock_seconds: on } });
       return;
@@ -601,15 +1014,45 @@ document.getElementById("grip")?.addEventListener("mousedown", e => {
   void win.startResize();
 });
 
+/** App updates (update.ts): the title bar button shows once a new version is downloaded. */
+async function startUpdates() {
+  if (!TAURI) return;
+  const btn = document.getElementById("updBtn") as HTMLButtonElement;
+  const { startUpdater } = await import("./update");
+  const up = await startUpdater(s => {
+    btn.hidden = !s.ready && !s.installing;
+    btn.disabled = s.installing;
+    btn.textContent = s.installing ? "Installing..." : `Update to ${s.version ?? ""}`;
+    btn.title = s.error ?? "Installs the new version and restarts Desk Hub";
+    const when = s.checked ? ` (checked ${new Date(s.checked * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})` : "";
+    aboutUpdate = s.checking ? "Checking for updates..."
+      : s.ready ? `Version ${s.version} is ready: use the button at the top.`
+      : s.error ? `Update check failed: ${s.error}`
+      : s.checked ? `Up to date${when}` : "Checks every 10 minutes";
+    updChecking = s.checking;
+    if (section === "about") render(true);
+  });
+  checkUpdates = () => void up.check();
+  btn.addEventListener("click", () => void up.install());
+}
+let aboutUpdate = "Checks every 10 minutes";
+let updChecking = false;
+let checkUpdates: () => void = () => undefined;
+
 async function boot() {
   fillIcons(document);
   S = await api.getSettings();
   st = await api.getStatus();
   version = await appVersion();
+  autostart = await api.autostartGet().catch(err => {
+    autostartNote = `Couldn't read the Windows setting: ${err}`;
+    return false;
+  });
   applyTheme();
   setDot();
   renderNav();
   render(true);
+  void startUpdates();
   await onStatus(s => {
     st = s;
     setDot();

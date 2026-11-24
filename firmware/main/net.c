@@ -10,6 +10,7 @@
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_wifi.h"
+#include "hubcfg.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mdns.h"
@@ -18,10 +19,12 @@
 static const char *TAG = "net";
 
 static volatile bool s_connected;
+static bool s_needs_setup;
 static char s_ip[16] = "";
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
+    if (s_needs_setup) return;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -48,20 +51,21 @@ static void mdns_start(void)
         ESP_LOGW(TAG, "mdns init failed");
         return;
     }
-    mdns_hostname_set(CONFIG_HUB_HOSTNAME);
+    mdns_hostname_set(hubcfg()->host);
     mdns_instance_name_set("Desk Hub");
     mdns_service_add(NULL, "_deskhub", "_tcp", 80, NULL, 0);
 }
 
 void net_start(void)
 {
-    setenv("TZ", CONFIG_HUB_TZ, 1);
+    const hub_cfg_t *hc = hubcfg();
+    setenv("TZ", hc->tz, 1);
     tzset();
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-    esp_netif_set_hostname(netif, CONFIG_HUB_HOSTNAME);
+    esp_netif_set_hostname(netif, hc->host);
 
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&init));
@@ -69,8 +73,11 @@ void net_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
 
     wifi_config_t cfg = {0};
-    strlcpy((char *)cfg.sta.ssid, CONFIG_HUB_WIFI_SSID, sizeof(cfg.sta.ssid));
-    strlcpy((char *)cfg.sta.password, CONFIG_HUB_WIFI_PASSWORD, sizeof(cfg.sta.password));
+    strlcpy((char *)cfg.sta.ssid, hc->ssid, sizeof(cfg.sta.ssid));
+    strlcpy((char *)cfg.sta.password, hc->pass, sizeof(cfg.sta.password));
+    // A release image on a board that never ran a local build: no network to join.
+    s_needs_setup = hc->ssid[0] == 0;
+    if (s_needs_setup) ESP_LOGE(TAG, "no Wi-Fi settings: flash a local build once (see README)");
     cfg.sta.threshold.authmode = WIFI_AUTH_OPEN;
     cfg.sta.pmf_cfg.capable = true;
     cfg.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
@@ -87,6 +94,11 @@ void net_start(void)
     esp_wifi_set_ps(WIFI_PS_NONE);
 
     mdns_start();
+}
+
+bool net_needs_setup(void)
+{
+    return s_needs_setup;
 }
 
 bool net_connected(void)

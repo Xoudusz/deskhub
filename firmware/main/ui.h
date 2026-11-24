@@ -36,6 +36,14 @@ void ui_set_net(const hub_net_t *n);
 void ui_set_github(const hub_github_t *g);
 // Navigation bar position: 0 left, 1 right, 2 bottom. Saved to NVS; restarts the board on change.
 void ui_set_nav(int nav);
+// Colour palette (0xRRGGBB). Defaults are the classic amber look.
+typedef struct {
+    uint32_t bg, rail, card, card_hi, border, pressed, text, muted, dim, accent, on_accent, accent_pressed;
+} hub_theme_t;
+extern hub_theme_t g_theme;
+void ui_theme_defaults(hub_theme_t *t);
+// Saves the palette to NVS and restarts the board when it differs from the current one.
+void ui_set_theme(const hub_theme_t *t);
 void ui_set_clock_seconds(bool on);  // Home clock shows seconds
 // Screensaver (a drifting clock) shown while the PC's display is asleep. A tap hides it.
 void ui_saver_show(bool on);
@@ -45,3 +53,4 @@ void ui_update_show(void);
 void ui_update_progress(int pct);
 void ui_update_message(const char *text);
 void ui_update_hide(void);
+void ui_setup_needed_show(void);  // no Wi-Fi settings: flash a local build once

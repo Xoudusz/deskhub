@@ -12,6 +12,59 @@ pub const SCREEN_H: i64 = 480;
 
 const QUICK: Duration = Duration::from_secs(5);
 const SCREENSHOT: Duration = Duration::from_secs(10);
+/// Upload plus the minute the board waits for "Install" plus writing the image.
+const FIRMWARE: Duration = Duration::from_secs(240);
+
+/// Smallest and largest image the board takes (ota.c: 64 KB .. OTA slot).
+const FIRMWARE_MIN: usize = 64 * 1024;
+const FIRMWARE_MAX: usize = 8 * 1024 * 1024;
+
+/// Send a firmware image (deskhub.bin, not the merged one) to the board. The board asks
+/// on screen; the call returns once it installed ("installed; restarting") or refused.
+pub async fn firmware(host: &str, token: &str, image: Vec<u8>) -> Result<String> {
+    check_firmware(&image)?;
+    let url = format!("http://{host}/firmware");
+    let client = reqwest::Client::builder()
+        .timeout(FIRMWARE)
+        .build()
+        .context("http client")?;
+    let resp = client
+        .post(&url)
+        .query(&[("token", token)])
+        .header("Content-Type", "application/octet-stream")
+        .body(image)
+        .send()
+        .await
+        .map_err(|e| anyhow!("board request failed: {}", e.without_url()))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        bail!("board said no ({status}): {}", text.trim());
+    }
+    Ok(text.trim().to_string())
+}
+
+/// An ESP app image starts with 0xE9 and has a sane size; a merged image (bootloader at
+/// offset 0) is refused because OTA writes only the app slot.
+pub fn check_firmware(image: &[u8]) -> Result<()> {
+    if image.len() < FIRMWARE_MIN || image.len() > FIRMWARE_MAX {
+        bail!(
+            "{} KB does not look like a firmware image",
+            image.len() / 1024
+        );
+    }
+    if image[0] != 0xE9 {
+        bail!("not an ESP32 firmware image (use deskhub.bin, not deskhub-merged.bin)");
+    }
+    // The app description sits 32 bytes in; its magic word is 0xABCD5432.
+    let magic = image
+        .get(32..36)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    if magic != Some(0xABCD_5432) {
+        bail!("not a Desk Hub app image (use deskhub.bin, not deskhub-merged.bin)");
+    }
+    Ok(())
+}
 
 /// The board's screenshot as PNG bytes (800x480). The board sends a 24-bit BMP.
 pub async fn screenshot_png(host: &str, token: &str) -> Result<Vec<u8>> {
@@ -221,5 +274,16 @@ mod tests {
         let text = root(&format!("127.0.0.1:{port}")).await.unwrap();
         assert_eq!(text, "<h1>deskhub</h1>");
         assert_eq!(task.await.unwrap(), "GET / HTTP/1.1");
+    }
+
+    #[test]
+    fn firmware_check_takes_app_images_only() {
+        let mut img = vec![0u8; 100 * 1024];
+        assert!(check_firmware(&img).is_err());
+        img[0] = 0xE9;
+        assert!(check_firmware(&img).is_err());
+        img[32..36].copy_from_slice(&0xABCD_5432u32.to_le_bytes());
+        assert!(check_firmware(&img).is_ok());
+        assert!(check_firmware(&img[..1024]).is_err());
     }
 }

@@ -19,15 +19,21 @@ export type Settings = {
     night_brightness: number;
     clock_seconds: boolean;
     night: string;
-    night_style: "off" | "clock";
+    night_style: "off" | "clock" | "dim";
     pc_sleep: "off" | "clock" | "none";
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
+  location: Location;
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
+  tiles: Tile[];
+  games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   imported: boolean;
 };
+
+/** The board's city, coordinates (decimal strings), POSIX time zone and units. */
+export type Location = { enabled: boolean; city: string; lat: string; lon: string; tz: string; fahrenheit: boolean; h24: boolean };
 
 export type Status = {
   state: "searching" | "connected" | "refused" | "stopped";
@@ -35,7 +41,15 @@ export type Status = {
   detail: string;
   firmware: string | null;
   since: number | null;
+  /** Board build ("s3", "p4rev1", "p4rev3") and where it keeps Wi-Fi/token ("nvs", "seed", "none"). */
+  variant?: string | null;
+  creds?: string | null;
+  /** What the board uses now (hello_ok). */
+  location?: Location | null;
 };
+
+/** Firmware card: newest GitHub release and whether this board can and should take it. */
+export type FirmwareCheck = { latest: string | null; update_available: boolean; blocked: string | null; error: string | null };
 
 export type SettingsPatch = { [K in keyof Settings]?: Partial<Settings[K]> };
 
@@ -64,6 +78,49 @@ export const HOME_SIZES: Record<Widget, { w: [number, number]; h: [number, numbe
   net: { w: [1, 5], h: [1, 1] },
   github: { w: [2, 5], h: [1, 2] },
 };
+
+/** A shortcut tile. state: null = guess, "" = never lit, or a Windows state. */
+export type Tile = { label: string; icon: string; color: string; action: TileAction; target: string; state: string | null };
+export type TileAction = "keys" | "run" | "open" | "media" | "volume" | "lock" | "mic";
+/** A non-Steam game the companion watches. */
+export type CustomGame = { name: string; process: string[]; match: string; title: string; image: string; launch: string };
+
+export const MAX_TILES = 16;
+/** The example tiles (settings.rs default_tiles). */
+export const EXAMPLE_TILES: Tile[] = [
+  { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
+  { label: "Mute sound", icon: "volume_off", color: "#3a4256", action: "volume", target: "mute", state: null },
+  { label: "Vol -", icon: "volume_down", color: "#3a4256", action: "volume", target: "down", state: null },
+  { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
+  { label: "Screenshot", icon: "screenshot_monitor", color: "#2f6f5e", action: "keys", target: "win+shift+s", state: null },
+  { label: "Terminal", icon: "terminal", color: "#2b2f3a", action: "run", target: "wt.exe", state: null },
+  { label: "Downloads", icon: "folder", color: "#8a6d1f", action: "open", target: "~/Downloads", state: null },
+  { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
+];
+/** Icons the board has for tiles (config.example.toml). */
+export const TILE_ICONS = (
+  "home insights memory speed music_note event calendar_today wb_sunny cloud grid_view apps wifi computer " +
+  "desktop_windows play_arrow pause skip_next skip_previous volume_up volume_down volume_off mic mic_off lock " +
+  "photo_camera screenshot_monitor terminal code public folder keyboard power_settings_new schedule timer mail chat " +
+  "sports_esports rocket_launch bolt star favorite settings refresh dark_mode headphones videocam movie " +
+  "developer_board lan shuffle repeat"
+).split(" ");
+export const TILE_ACTIONS: [TileAction, string, string][] = [
+  ["keys", "Press keys", "e.g. ctrl+shift+m, win+shift+s, f13"],
+  ["run", "Run a program", "e.g. notepad.exe or code C:\\Code\\project"],
+  ["open", "Open file, folder or URL", "e.g. ~/Downloads or https://..."],
+  ["media", "Media control", "toggle, next or prev"],
+  ["volume", "Volume", "up, down or mute"],
+  ["lock", "Lock the PC", ""],
+  ["mic", "Mute microphone", ""],
+];
+/** Non-Steam games recognised without setup (companion/deskhub/game_presets.py). */
+export const GAME_PRESETS = [
+  "League of Legends", "Teamfight Tactics", "VALORANT", "Fortnite", "Rocket League", "Minecraft",
+  "Minecraft Bedrock", "Roblox", "Overwatch 2", "World of Warcraft", "Diablo IV", "Hearthstone", "StarCraft II",
+  "Call of Duty", "Genshin Impact", "Honkai: Star Rail", "Zenless Zone Zero", "Grand Theft Auto V", "Apex Legends",
+  "EA SPORTS FC", "The Sims 4", "Halo Infinite", "Escape from Tarkov", "osu!",
+];
 
 /** One Home block, in grid cells. */
 export type GridCell = { widget: string; x: number; y: number; w: number; h: number };
@@ -104,7 +161,7 @@ export const BUILTIN_PRESETS: HomePreset[] = [
 export const GRID_COLS = 5;
 export const GRID_ROWS = 3;
 
-const TAURI = (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== undefined;
+export const TAURI = (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== undefined;
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -123,11 +180,20 @@ const mock: Settings = {
     ],
     presets: [],
   },
-  appearance: { theme: "midnight" },
+  appearance: { theme: "midnight", board_theme: "same" },
   ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
+  tiles: [
+    { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
+    { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
+    { label: "Screenshot", icon: "screenshot_monitor", color: "#2f6f5e", action: "keys", target: "win+shift+s", state: null },
+    { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
+  ],
+  games: { steam: true, presets: true, presets_disabled: [], custom: [] },
+  location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
+let mockAutostart = true;
 const subs = { status: new Set<(s: Status) => void>(), settings: new Set<(s: Settings) => void>() };
 
 function mockEmitSettings() {
@@ -148,7 +214,8 @@ setTimeout(() => {
   if (TAURI) return;
   mockStatus = {
     state: "connected", host: mock.board.host, detail: "Connected", firmware: "0.1.0 (mock)",
-    since: Math.floor(Date.now() / 1000),
+    since: Math.floor(Date.now() / 1000), variant: "p4rev1", creds: "nvs",
+    location: { enabled: false, city: "Vienna", lat: "48.2082", lon: "16.3738", tz: "CET-1CEST,M3.5.0,M10.5.0/3", fahrenheit: false, h24: true },
   };
   subs.status.forEach(cb => cb(mockStatus));
 }, 1500);
@@ -165,6 +232,34 @@ export const api = {
     else console.info("[mock] board_tap", x, y);
   },
   /** File picker for config.toml; null when cancelled or in browser mock mode. */
+  /** Send a firmware image to the board (picker when no path); resolves with the board's answer. */
+  boardFirmware: async (path?: string): Promise<string> => {
+    if (TAURI) return invoke<string>("board_firmware", { path: path ?? null });
+    await new Promise(r => setTimeout(r, 1500));
+    return "installed; restarting";
+  },
+  /** Start with Windows; the setter returns the state Windows reports afterwards. */
+  autostartGet: (): Promise<boolean> => (TAURI ? invoke<boolean>("autostart_get") : Promise.resolve(mockAutostart)),
+  autostartSet: (on: boolean): Promise<boolean> => (TAURI ? invoke<boolean>("autostart_set", { on }) : Promise.resolve((mockAutostart = on))),
+  /** Newest firmware release for this board (GitHub). */
+  firmwareCheck: (): Promise<FirmwareCheck> => (TAURI ? invoke<FirmwareCheck>("firmware_check")
+    : Promise.resolve({ latest: "firmware-v0.7.0", update_available: true, blocked: null, error: null })),
+  /** Download the newest release image for this board and send it; resolves with the board's answer. */
+  boardFirmwareGithub: async (): Promise<string> => {
+    if (TAURI) return invoke<string>("board_firmware_github");
+    await new Promise(r => setTimeout(r, 1500));
+    return "installed; restarting";
+  },
+  pickImage: async (): Promise<string | null> => {
+    if (!TAURI) return null;
+    const picked = await open({
+      title: "Pick a picture",
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Pictures", extensions: ["png", "jpg", "jpeg", "bmp", "webp", "gif"] }],
+    });
+    return typeof picked === "string" ? picked : null;
+  },
   pickConfig: async (): Promise<string | null> => {
     if (!TAURI) return null;
     const picked = await open({

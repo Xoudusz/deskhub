@@ -1,4 +1,5 @@
 #include "display.h"
+#include "hubcfg.h"
 
 #include "board.h"
 #include "esp_heap_caps.h"
@@ -234,12 +235,11 @@ static void idle_check(void)
             ui_saver_show(true);
         }
     }
-#if CONFIG_HUB_SCREEN_OFF_MIN > 0
-    if (s_screen_on && idle > (int64_t)CONFIG_HUB_SCREEN_OFF_MIN * 60 * 1000000) {
+    const int off_min = hubcfg()->screen_off_min;
+    if (off_min > 0 && s_screen_on && idle > (int64_t)off_min * 60 * 1000000) {
         board_backlight(false);
         s_screen_on = false;
     }
-#endif
 }
 static void lvgl_task(void *arg)
 {

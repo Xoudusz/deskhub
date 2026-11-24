@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hub_model.h"
+#include "hubcfg.h"
 #include "icons.h"
 #include "net.h"
 #include "sdkconfig.h"
@@ -22,19 +23,21 @@ static const char *TAG = "weather";
 
 #define BODY_MAX (24 * 1024)
 
-#if CONFIG_HUB_FAHRENHEIT
-#define UNITS "&temperature_unit=fahrenheit&wind_speed_unit=mph"
-#else
-#define UNITS "&wind_speed_unit=kmh"
-#endif
+// Built once at start from the board's location (hubcfg); a new location restarts the board.
+static char s_url[512];
 
-static const char *URL =
-    "https://api.open-meteo.com/v1/forecast?latitude=" CONFIG_HUB_LATITUDE
-    "&longitude=" CONFIG_HUB_LONGITUDE
-    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m"
-    "&hourly=temperature_2m,weather_code,precipitation_probability"
-    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-    "&timezone=auto&timeformat=unixtime&forecast_days=6&forecast_hours=24" UNITS;
+static void build_url(void)
+{
+    const hub_cfg_t *c = hubcfg();
+    snprintf(s_url, sizeof(s_url),
+             "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
+             "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m"
+             "&hourly=temperature_2m,weather_code,precipitation_probability"
+             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+             "&timezone=auto&timeformat=unixtime&forecast_days=6&forecast_hours=24%s",
+             c->lat, c->lon,
+             c->fahrenheit ? "&temperature_unit=fahrenheit&wind_speed_unit=mph" : "&wind_speed_unit=kmh");
+}
 
 const char *weather_icon(int code, bool is_day)
 {
@@ -150,7 +153,7 @@ static bool parse(const char *body, hub_weather_t *w)
 static bool fetch(char *body, hub_weather_t *w)
 {
     esp_http_client_config_t cfg = {
-        .url = URL,
+        .url = s_url,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 10000,
         .buffer_size = 2048,
@@ -206,6 +209,7 @@ static void weather_task(void *arg)
 
 void weather_start(void)
 {
+    build_url();
     xTaskCreatePinnedToCore(weather_task, "weather", 8192, NULL, 3, NULL, 0);
 }
 

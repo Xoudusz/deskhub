@@ -1,3 +1,4 @@
+#include "hubcfg.h"
 #include "ui.h"
 
 #include <stdio.h>
@@ -62,6 +63,23 @@ static lv_obj_t *s_nav[PAGE_COUNT];
 static lv_obj_t *s_wifi_icon, *s_pc_icon;
 static lv_obj_t *s_nav_logo;   // the AI tab's agent logo
 int g_nav = NAV_LEFT;
+
+#define THEME_VERSION 1
+static const hub_theme_t k_theme_default = {
+    .bg = 0x0d0e11, .rail = 0x111216, .card = 0x16181d, .card_hi = 0x262a32, .border = 0x262a32,
+    .pressed = 0x30343d, .text = 0xf3f4f6, .muted = 0x9aa0aa, .dim = 0x6b717c,
+    .accent = 0xffb224, .on_accent = 0x16181d, .accent_pressed = 0xd9931a,
+};
+hub_theme_t g_theme = {
+    .bg = 0x0d0e11, .rail = 0x111216, .card = 0x16181d, .card_hi = 0x262a32, .border = 0x262a32,
+    .pressed = 0x30343d, .text = 0xf3f4f6, .muted = 0x9aa0aa, .dim = 0x6b717c,
+    .accent = 0xffb224, .on_accent = 0x16181d, .accent_pressed = 0xd9931a,
+};
+
+void ui_theme_defaults(hub_theme_t *t)
+{
+    *t = k_theme_default;
+}
 
 #define RAIL_PAD_V 10
 #define RAIL_GAP 2
@@ -320,12 +338,12 @@ void ui_fmt_clock(char *buf, size_t n, time_t t)
 {
     struct tm tm;
     localtime_r(&t, &tm);
-#if CONFIG_HUB_24H
-    snprintf(buf, n, "%02d:%02d", tm.tm_hour, tm.tm_min);
-#else
-    int h = tm.tm_hour % 12;
-    snprintf(buf, n, "%d:%02d %s", h ? h : 12, tm.tm_min, tm.tm_hour < 12 ? "AM" : "PM");
-#endif
+    if (hubcfg()->h24) {
+        snprintf(buf, n, "%02d:%02d", tm.tm_hour, tm.tm_min);
+    } else {
+        int h = tm.tm_hour % 12;
+        snprintf(buf, n, "%d:%02d %s", h ? h : 12, tm.tm_min, tm.tm_hour < 12 ? "AM" : "PM");
+    }
 }
 
 bool ui_limits_stale(time_t updated)
@@ -350,12 +368,12 @@ void ui_fmt_hour(char *buf, size_t n, time_t t)
 {
     struct tm tm;
     localtime_r(&t, &tm);
-#if CONFIG_HUB_24H
-    snprintf(buf, n, "%02d:00", tm.tm_hour);
-#else
-    int h = tm.tm_hour % 12;
-    snprintf(buf, n, "%d %s", h ? h : 12, tm.tm_hour < 12 ? "AM" : "PM");
-#endif
+    if (hubcfg()->h24) {
+        snprintf(buf, n, "%02d:00", tm.tm_hour);
+    } else {
+        int h = tm.tm_hour % 12;
+        snprintf(buf, n, "%d %s", h ? h : 12, tm.tm_hour < 12 ? "AM" : "PM");
+    }
 }
 
 void ui_fmt_temp(char *buf, size_t n, float t)
@@ -493,6 +511,42 @@ static void load_nav(void)
         if (nvs_get_u8(h, "nav", &nav) == ESP_OK && nav <= NAV_BOTTOM) g_nav = nav;
         nvs_close(h);
     }
+}
+
+// Palette: NVS blob "theme" = version byte + hub_theme_t; defaults on missing or bad data.
+static void load_theme(void)
+{
+    nvs_handle_t h;
+    uint8_t buf[1 + sizeof(hub_theme_t)];
+    size_t len = sizeof(buf);
+    if (nvs_open("hub", NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_blob(h, "theme", buf, &len) == ESP_OK && len == sizeof(buf) && buf[0] == THEME_VERSION) {
+            hub_theme_t t;
+            memcpy(&t, buf + 1, sizeof(t));
+            const uint32_t *c = (const uint32_t *)&t;
+            bool ok = true;
+            for (size_t i = 0; i < sizeof(t) / sizeof(uint32_t); i++) ok = ok && c[i] <= 0xffffff;
+            if (ok) g_theme = t;
+        }
+        nvs_close(h);
+    }
+}
+
+// Colours are baked into every widget's styles, so save the palette and restart.
+void ui_set_theme(const hub_theme_t *t)
+{
+    if (memcmp(t, &g_theme, sizeof(g_theme)) == 0) return;
+    uint8_t buf[1 + sizeof(hub_theme_t)];
+    buf[0] = THEME_VERSION;
+    memcpy(buf + 1, t, sizeof(*t));
+    nvs_handle_t h;
+    if (nvs_open("hub", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_blob(h, "theme", buf, sizeof(buf));
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    ESP_LOGI(TAG, "theme changed; restarting");
+    esp_restart();
 }
 
 // Moving the bar changes every page's size, so save it and restart: the
@@ -824,6 +878,7 @@ void ui_init(void)
     lv_obj_set_style_text_color(scr, lv_color_hex(COL_TEXT), 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
+    load_theme();
     load_nav();
     build_rail(scr);
 

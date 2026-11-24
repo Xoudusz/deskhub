@@ -33,12 +33,72 @@ typedef struct {
 static cover_t s_hdr, s_thumb, s_port[HUB_STEAM_RECENT];
 static uint32_t s_rx_tick;   // lv_tick when the last steam message arrived
 
-static lv_obj_t *s_now_img, *s_now_name, *s_now_time, *s_now_total, *s_now_cap;
+static lv_obj_t *s_now_ph, *s_now_img, *s_now_name, *s_now_time, *s_now_total, *s_now_cap;
 static lv_obj_t *s_idle, *s_idle_sub, *s_now_box;
 static lv_obj_t *s_fr_cap, *s_fr_name[HUB_STEAM_FRIENDS], *s_fr_game[HUB_STEAM_FRIENDS];
 static lv_obj_t *s_tile[HUB_STEAM_RECENT], *s_tile_img[HUB_STEAM_RECENT], *s_tile_ph[HUB_STEAM_RECENT];
 static lv_obj_t *s_tile_name[HUB_STEAM_RECENT], *s_tile_hours[HUB_STEAM_RECENT];
 static lv_obj_t *s_recent_empty;
+
+// ---- placeholder for games without art ---------------------------------------
+// A rounded tile in a muted colour picked from the game's name, with its initials.
+
+static uint32_t name_color(const char *name)
+{
+    static const uint32_t pal[8] = {0x2F5D8A, 0x2E7D6B, 0x6B4E9B, 0x9A4A5A,
+                                    0x8A6A2F, 0x4A6B2F, 0x34707F, 0x7A4A2E};
+    uint32_t h = 2166136261u;   // FNV-1a over the lower-cased name
+    for (const char *p = name; *p; p++) {
+        char c = *p;
+        if (c >= 'A' && c <= 'Z') c += 32;
+        h = (h ^ (uint8_t)c) * 16777619u;
+    }
+    return pal[(h >> 8) % 8];
+}
+
+// First letter of each word, up to 3; a single word gives its first 2 letters.
+static void name_initials(char *out, size_t n, const char *name)
+{
+    char first[4] = {0}, second = 0;
+    int words = 0;
+    bool start = true;
+    for (const char *p = name; *p; p++) {
+        char c = *p;
+        bool alnum = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        if (!alnum) {
+            start = true;
+            continue;
+        }
+        if (c >= 'a' && c <= 'z') c -= 32;
+        if (start) {
+            if (words < 3) first[words] = c;
+            words++;
+        } else if (words == 1 && !second) {
+            second = c;
+        }
+        start = false;
+    }
+    if (words == 1 && second) snprintf(out, n, "%c%c", first[0], second);
+    else if (words) snprintf(out, n, "%.3s", first);
+    else snprintf(out, n, "?");
+}
+
+void games_placeholder_init(lv_obj_t *ph, const lv_font_t *font)
+{
+    lv_obj_set_style_radius(ph, 10, 0);
+    lv_obj_set_style_bg_opa(ph, LV_OPA_COVER, 0);
+    lv_obj_t *l = ui_label(ph, font, 0xFFFFFF, "");
+    lv_obj_center(l);
+}
+
+void games_placeholder_set(lv_obj_t *ph, const char *name)
+{
+    bool has = name && *name;
+    char ini[4] = "";
+    if (has) name_initials(ini, sizeof(ini), name);
+    lv_obj_set_style_bg_color(ph, lv_color_hex(has ? name_color(name) : COL_CARD_HI), 0);
+    lv_label_set_text(lv_obj_get_child(ph, 0), ini);
+}
 
 void ui_fmt_playtime(char *buf, size_t n, int minutes)
 {
@@ -166,6 +226,13 @@ void games_page_create(lv_obj_t *page)
     lv_obj_remove_style_all(s_now_box);
     lv_obj_set_size(s_now_box, LV_PCT(100), LV_PCT(100));
     lv_obj_remove_flag(s_now_box, LV_OBJ_FLAG_SCROLLABLE);
+    s_now_ph = lv_obj_create(s_now_box);   // shown while the game has no cover
+    lv_obj_remove_style_all(s_now_ph);
+    lv_obj_remove_flag(s_now_ph, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(s_now_ph, IMG_W, IMG_H);
+    lv_obj_set_pos(s_now_ph, 0, 0);
+    games_placeholder_init(s_now_ph, g_font_48);
+    lv_obj_set_style_radius(s_now_ph, 12, 0);
     s_now_img = lv_image_create(s_now_box);
     lv_obj_set_size(s_now_img, IMG_W, IMG_H);
     lv_image_set_inner_align(s_now_img, LV_IMAGE_ALIGN_STRETCH);
@@ -235,11 +302,7 @@ void games_page_create(lv_obj_t *page)
         lv_obj_remove_flag(ph, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_size(ph, PORT_W, PORT_H);
         lv_obj_align(ph, LV_ALIGN_TOP_MID, 0, 0);
-        lv_obj_set_style_radius(ph, 10, 0);
-        lv_obj_set_style_bg_color(ph, lv_color_hex(COL_CARD_HI), 0);
-        lv_obj_set_style_bg_opa(ph, LV_OPA_COVER, 0);
-        lv_obj_t *pi = ui_label(ph, g_icon_48, COL_DIM, ICON_SPORTS_ESPORTS);
-        lv_obj_center(pi);
+        games_placeholder_init(ph, g_font_32);
         lv_obj_t *img = lv_image_create(b);
         lv_obj_remove_flag(img, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_size(img, PORT_W, PORT_H);
@@ -280,8 +343,14 @@ void games_refresh(void)
         lv_obj_remove_flag(s_now_box, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_idle, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(s_now_name, s->now.name);
-        if (s_hdr.appid == s->now.appid) lv_image_set_src(s_now_img, &s_hdr.dsc);
-        else lv_image_set_src(s_now_img, NULL);
+        games_placeholder_set(s_now_ph, s->now.name);
+        if (s_hdr.appid == s->now.appid) {
+            lv_image_set_src(s_now_img, &s_hdr.dsc);
+            lv_obj_remove_flag(s_now_img, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_image_set_src(s_now_img, NULL);
+            lv_obj_add_flag(s_now_img, LV_OBJ_FLAG_HIDDEN);
+        }
         ui_fmt_playtime(tot, sizeof(tot), s->now.total_min);
         buf[0] = 0;
         if (games_total_worth_showing(s->now.total_min, games_session_s())) snprintf(buf, sizeof(buf), "%s played", tot);
@@ -317,6 +386,7 @@ void games_refresh(void)
         }
         lv_obj_remove_flag(s_tile[i], LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(s_tile_name[i], s->recent[i].name);
+        games_placeholder_set(s_tile_ph[i], s->recent[i].name);
         if (s->recent[i].total_min > 0) {
             ui_fmt_playtime(tot, sizeof(tot), s->recent[i].total_min);
             lv_label_set_text(s_tile_hours[i], tot);
