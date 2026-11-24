@@ -18,7 +18,21 @@ permissions:
   contents: write
 
 jobs:
+  sim:
+    # The board simulator: the firmware UI built to WASM (firmware/sim/build.sh, emsdk in docker).
+    name: Board simulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash firmware/sim/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: board-sim
+          path: desktop/public/sim/
+          if-no-files-found: error
+
   release:
+    needs: sim
     runs-on: windows-latest
     defaults:
       run:
@@ -52,6 +66,10 @@ jobs:
           cache-on-failure: true
 
       - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: board-sim
+          path: desktop/public/sim
       - run: cargo test -p deskhub-core -p deskhub-cli
 
       - name: deskhub-cli sidecar

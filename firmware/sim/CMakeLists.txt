@@ -27,9 +27,9 @@ target_link_libraries(deskhub_sim lvgl)
 set_target_properties(deskhub_sim PROPERTIES SUFFIX ".js")
 target_link_options(deskhub_sim PRIVATE
     -O2
-    -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createDeskhubSim -sENVIRONMENT=web
+    -sMODULARIZE=1 -sEXPORT_NAME=createDeskhubSim -sENVIRONMENT=web
     -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sSTACK_SIZE=1MB
-    -sEXPORTED_FUNCTIONS=_malloc,_free,_sim_init,_sim_step,_sim_pixels,_sim_take_dirty,_sim_pointer,_sim_json,_sim_binary,_sim_weather_url,_sim_weather
+    -sEXPORTED_FUNCTIONS=_malloc,_free,_sim_init,_sim_step,_sim_pixels,_sim_take_dirty,_sim_pointer,_sim_show_home,_sim_json,_sim_binary,_sim_weather_url,_sim_weather
     -sEXPORTED_RUNTIME_METHODS=HEAPU8,UTF8ToString,stringToNewUTF8)
 
 # The board's fonts (EMBED_FILES there) as C arrays.

@@ -11,6 +11,7 @@ import {
   type Tile, type TileAction, type CustomGame, type FirmwareCheck, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
+import { mountSim, onSimState, simState } from "./sim";
 
 type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
@@ -92,9 +93,33 @@ function render(force = false) {
   const top = main.scrollTop;
   main.innerHTML = sectionHtml();
   main.querySelectorAll<HTMLInputElement>("input[type=range]").forEach(fillRange);
+  mountSim(main, section, section === "pages");
   main.scrollTop = top;
   if (section === "status") refreshShot();
 }
+
+// ---- simulated board (sim.ts) ----
+/** Status preview: the board's screenshot ("live") or the simulator ("sim"). */
+let preview: "live" | "sim" = "live";
+
+/** The simulator's placeholder, with a note when it can't run. */
+function simHtml(): string {
+  const st = simState();
+  const note = st === "missing" ? "Simulator not built (firmware/sim/build.sh)"
+    : st === "failed" ? "The simulator failed to start"
+    : st === "loading" || st === "idle" ? "Starting the simulator" : "";
+  return `<div class="prev sim" data-sim>${note ? `<span class="simnote">${esc(note)}</span>` : ""}</div>`;
+}
+
+// The note over the canvas follows the simulator's state (in place: no re-render mid-edit).
+onSimState(() => {
+  const host = main.querySelector<HTMLElement>("[data-sim]");
+  if (!host) return;
+  const html = simHtml();
+  const note = /<span class="simnote">(.*?)<\/span>/.exec(html)?.[1] ?? "";
+  host.querySelector(".simnote")?.remove();
+  if (note) host.insertAdjacentHTML("afterbegin", `<span class="simnote">${note}</span>`);
+});
 
 function renderNav() {
   nav.innerHTML =
@@ -187,12 +212,17 @@ function statusHtml(): string {
     row("Firmware", esc(st.firmware ?? "Unknown")),
     row("Connected since", st.since ? esc(new Date(st.since * 1000).toLocaleString()) : "Not yet"),
   ].join(""));
-  const body = on
-    ? `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"${lastShot ? ` src="${lastShot}"` : ""}></div>`
-    : lastShot
-      ? `<div class="prev offline"><img class="stale" src="${lastShot}" alt="Last board screen" draggable="false"><span>Board offline: last picture</span></div>`
-      : `<div class="prev offline">Board offline</div>`;
-  return board + card("Live preview", "Tap the picture to press the board", `<div class="swr swsl">${body}</div>`);
+  const sim = !on || preview === "sim";
+  const body = sim
+    ? simHtml()
+    : `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"${lastShot ? ` src="${lastShot}"` : ""}></div>`;
+  const seg = `<span class="seg">` +
+    `<button type="button" data-act="preview" data-v="live" class="${sim ? "" : "on"}"${on ? "" : " disabled"}>Board</button>` +
+    `<button type="button" data-act="preview" data-v="sim" class="${sim ? "on" : ""}">Simulated</button></span>`;
+  const sub = sim
+    ? "The board's own screen, simulated with the app's data. Clicks act as touches; shortcuts don't run"
+    : "Tap the picture to press the board";
+  return board + card("Preview", sub, row("Show", seg, on ? "" : "Board offline: showing the simulator") + `<div class="swr swsl">${body}</div>`);
 }
 
 function displayHtml(): string {
@@ -310,6 +340,8 @@ function pagesHtml(): string {
     row("Show header", tgl(`data-k="homeHeader"`, S.home.header)),
     `<div class="grid-wrap">${gridHtml()}</div>`,
     sizeRow(),
+    row("Preview", "", "The simulated board, updated when you drop or resize a block"),
+    `<div class="swr swsl">${simHtml()}</div>`,
     row("Add a block", select(`data-k="homeAdd"`, addOpts, "", free.length === 0), esc(homeNote)),
     row("Save as preset",
       `<input class="txt" data-k="presetName" placeholder="Name" maxlength="24" value="${esc(presetName)}" spellcheck="false">` +
@@ -790,6 +822,10 @@ async function act(el: HTMLElement) {
     case "preset-delete": deletePreset(); return;
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
+    case "preview":
+      preview = el.dataset.v === "sim" ? "sim" : "live";
+      render(true);
+      return;
     case "tile-select": selTile = Number(el.dataset.idx); render(true); return;
     case "tile-add": {
       const tiles = [...S.tiles, { label: "New tile", icon: "apps", color: "#2b2f3a", action: "keys" as TileAction, target: "", state: null }];

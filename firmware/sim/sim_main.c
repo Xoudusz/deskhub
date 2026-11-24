@@ -10,6 +10,7 @@
 #include "hubcfg.h"
 #include "lvgl.h"
 #include "ui.h"
+#include "ui_internal.h"
 #include "weather.h"
 
 #define W 800
@@ -86,6 +87,9 @@ EMSCRIPTEN_KEEPALIVE void sim_pointer(int x, int y, int down)
     s_py = y < 0 ? 0 : y >= H ? H - 1 : y;
     s_down = down != 0;
 }
+
+// Shows the Home page (the app's Home builder previews it).
+EMSCRIPTEN_KEEPALIVE void sim_show_home(void) { ui_show_page(PAGE_HOME); }
 
 // A JSON message, as the board gets it over the WebSocket (no hello needed).
 EMSCRIPTEN_KEEPALIVE void sim_json(const char *text) { hub_dispatch_text(text); }

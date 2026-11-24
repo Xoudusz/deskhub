@@ -426,6 +426,10 @@ colors = "green"   # or "accent": shades of the board's amber
 
 ## Customizing Home
 
+The desktop app's *Pages* section has a Home builder: drag blocks, resize them by the corner, and see the
+result on a simulated board below the grid (the board's own UI, compiled to WASM; `firmware/sim/`). The
+*Status* section shows the same simulator while the board is offline, or when you pick *Simulated*.
+
 Home is a grid of 5 columns by 3 rows, under a slim bar with the time and date. Each widget takes a size in cells (width × height) and lays itself out for it. Place widgets in `companion/config.toml`, or use setup's *Home screen* step, which asks for a widget and a size and puts it in the first free spot (type `undo` to take the last one off, or `clear` to start over):
 
 ```toml

@@ -7,6 +7,9 @@ Layout:
 - `crates/core/`: the service. It has no Tauri or GUI dependency, so it builds and tests on Linux. It holds the board protocol, the WebSocket session, the settings with config.toml import, and the HTTP calls (screenshot, tap).
 - `src-tauri/`: the Tauri shell. It provides the window, tray, autostart and single-instance, and wraps `core` in commands and events.
 - `src/`, `index.html`: the frontend (vanilla TypeScript + Vite). Run `npm run dev` to open it in a browser with a mock backend.
+- `src/sim.ts`: the simulated board (Status preview and Home builder): the firmware UI compiled to WASM by
+  `bash ../firmware/sim/build.sh` into `public/sim/` (not committed; CI builds it). Without it the views say
+  "Simulator not built".
 
 The Python companion (`../companion`) still does calendars, printers, internet stats and GitHub. Don't run it at the same time as the app: the board accepts one companion only.
 
@@ -21,6 +24,7 @@ Commands (`invoke`):
 | `get_status` | – | `Status` |
 | `board_screenshot` | – | `string`: PNG as a `data:image/png;base64,...` URL (800x480) |
 | `board_tap` | `{ x: number, y: number }` (board pixels, 0-799 / 0-479) | `null` |
+| `sim_state` | – | `SimFrame[]`: every frame the board would get on connect (layout, home, then the published state, binary first; the board's own location while the app sets none). `SimFrame = { json: object } \| { bin: string /* base64 ART1/STM1 */ }` |
 | `autostart_get` / `autostart_set` | – / `{ on: boolean }` | `boolean`: Start with Windows (enabled on first run) |
 | `firmware_check` | – | `{ latest: string \| null, update_available: boolean, blocked: string \| null, error: string \| null }`: newest `firmware-latest/firmware.json` release for the connected board |
 | `board_firmware_github` | – | `string`: downloads the release image for the board's variant, checks sha256 and size, sends it (`POST /firmware`, the board asks first). Refused unless the board reports `creds: "nvs"` and a known variant |
@@ -30,6 +34,8 @@ Events (`listen`):
 
 - `status`: `Status`, sent on every change.
 - `settings`: `Settings`, sent after any change.
+- `sim-frame`: `SimFrame`, every frame published for the board (and layout/home when settings change them).
+- `sim-resync`: frames were missed; call `sim_state` again.
 
 ```ts
 type Settings = {

@@ -165,6 +165,8 @@ bool hubcfg_token_ok(const char *token) { (void)token; return false; }
 const char *hubcfg_variant(void) { return "sim"; }
 const char *hubcfg_creds(void) { return "nvs"; }
 
+// Unlike the board (hubcfg.c), no validation: the app only sends locations the board accepts,
+// and the simulator only needs the values for the clock, units and weather URL.
 bool hubcfg_set_location(const char *city, const char *lat, const char *lon, const char *tz, bool fahrenheit, bool h24)
 {
     if (!strcmp(city, s_cfg.city) && !strcmp(lat, s_cfg.lat) && !strcmp(lon, s_cfg.lon) && !strcmp(tz, s_cfg.tz) &&

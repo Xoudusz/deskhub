@@ -153,6 +153,16 @@ fn get_status(state: tauri::State<'_, App>) -> Status {
     state.status.lock().unwrap().clone()
 }
 
+/// The simulator's starting state: every frame the board would get on connect.
+#[tauri::command]
+fn sim_state(state: tauri::State<'_, App>) -> Vec<serde_json::Value> {
+    state
+        .service
+        .as_ref()
+        .map(|svc| svc.sim_snapshot().iter().map(|o| o.to_sim_json()).collect())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 async fn board_screenshot(state: tauri::State<'_, App>) -> Result<String, String> {
     let s = state.settings();
@@ -397,6 +407,7 @@ pub fn run() {
             };
 
             let status_rx = service.as_ref().map(|svc| svc.status());
+            let mut sim_rx = service.as_ref().map(|svc| svc.sim_frames());
             app.manage(App {
                 settings: Mutex::new(settings),
                 file,
@@ -415,6 +426,26 @@ pub fn run() {
                         let st = rx.borrow_and_update().clone();
                         *h.state::<App>().status.lock().unwrap() = st.clone();
                         let _ = h.emit("status", &st);
+                    }
+                });
+            }
+
+            // The simulator's live feed: "sim-frame" per frame; "sim-resync" when frames were
+            // missed (the window then reloads the whole state with sim_state).
+            if let Some(mut rx) = sim_rx.take() {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::sync::broadcast::error::RecvError;
+                    loop {
+                        match rx.recv().await {
+                            Ok(out) => {
+                                let _ = h.emit("sim-frame", out.to_sim_json());
+                            }
+                            Err(RecvError::Lagged(_)) => {
+                                let _ = h.emit("sim-resync", ());
+                            }
+                            Err(RecvError::Closed) => break,
+                        }
                     }
                 });
             }
@@ -474,6 +505,7 @@ pub fn run() {
             board_tap,
             board_firmware,
             firmware_check,
+            sim_state,
             autostart_get,
             autostart_set,
             board_firmware_github,
