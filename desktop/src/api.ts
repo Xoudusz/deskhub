@@ -24,6 +24,7 @@ export type Settings = {
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
+  location: Location;
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
   tiles: Tile[];
@@ -31,13 +32,24 @@ export type Settings = {
   imported: boolean;
 };
 
+/** The board's city, coordinates (decimal strings), POSIX time zone and units. */
+export type Location = { enabled: boolean; city: string; lat: string; lon: string; tz: string; fahrenheit: boolean; h24: boolean };
+
 export type Status = {
   state: "searching" | "connected" | "refused" | "stopped";
   host: string;
   detail: string;
   firmware: string | null;
   since: number | null;
+  /** Board build ("s3", "p4rev1", "p4rev3") and where it keeps Wi-Fi/token ("nvs", "seed", "none"). */
+  variant?: string | null;
+  creds?: string | null;
+  /** What the board uses now (hello_ok). */
+  location?: Location | null;
 };
+
+/** Firmware card: newest GitHub release and whether this board can and should take it. */
+export type FirmwareCheck = { latest: string | null; update_available: boolean; blocked: string | null; error: string | null };
 
 export type SettingsPatch = { [K in keyof Settings]?: Partial<Settings[K]> };
 
@@ -177,6 +189,7 @@ const mock: Settings = {
     { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
   ],
   games: { steam: true, presets: true, presets_disabled: [], custom: [] },
+  location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
@@ -200,7 +213,8 @@ setTimeout(() => {
   if (TAURI) return;
   mockStatus = {
     state: "connected", host: mock.board.host, detail: "Connected", firmware: "0.1.0 (mock)",
-    since: Math.floor(Date.now() / 1000),
+    since: Math.floor(Date.now() / 1000), variant: "p4rev1", creds: "nvs",
+    location: { enabled: false, city: "Vienna", lat: "48.2082", lon: "16.3738", tz: "CET-1CEST,M3.5.0,M10.5.0/3", fahrenheit: false, h24: true },
   };
   subs.status.forEach(cb => cb(mockStatus));
 }, 1500);
@@ -220,6 +234,15 @@ export const api = {
   /** Send a firmware image to the board (picker when no path); resolves with the board's answer. */
   boardFirmware: async (path?: string): Promise<string> => {
     if (TAURI) return invoke<string>("board_firmware", { path: path ?? null });
+    await new Promise(r => setTimeout(r, 1500));
+    return "installed; restarting";
+  },
+  /** Newest firmware release for this board (GitHub). */
+  firmwareCheck: (): Promise<FirmwareCheck> => (TAURI ? invoke<FirmwareCheck>("firmware_check")
+    : Promise.resolve({ latest: "firmware-v0.7.0", update_available: true, blocked: null, error: null })),
+  /** Download the newest release image for this board and send it; resolves with the board's answer. */
+  boardFirmwareGithub: async (): Promise<string> => {
+    if (TAURI) return invoke<string>("board_firmware_github");
     await new Promise(r => setTimeout(r, 1500));
     return "installed; restarting";
   },

@@ -20,6 +20,8 @@ pub struct Settings {
     pub pages: Pages,
     pub home: Home,
     pub appearance: Appearance,
+    /// The board's city, coordinates, time zone and units ("location" message).
+    pub location: Location,
     pub ai: Ai,
     /// Shortcut tiles, in order (config.toml [[tiles]]). At most MAX_TILES.
     pub tiles: Vec<Tile>,
@@ -38,10 +40,42 @@ impl Default for Settings {
             pages: Pages::default(),
             home: Home::default(),
             appearance: Appearance::default(),
+            location: Location::default(),
             ai: Ai::default(),
             tiles: default_tiles(),
             games: Games::default(),
             imported: false,
+        }
+    }
+}
+
+/// Weather location, clock and units of the board. Until `enabled` the app sends nothing and
+/// the board keeps what it stores (from its local build); the UI shows the board's values
+/// (hello_ok) as the starting point. Coordinates are decimal strings ("48.2082").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Location {
+    pub enabled: bool,
+    pub city: String,
+    pub lat: String,
+    pub lon: String,
+    /// POSIX TZ string, e.g. "CET-1CEST,M3.5.0,M10.5.0/3".
+    pub tz: String,
+    pub fahrenheit: bool,
+    pub h24: bool,
+}
+
+impl Default for Location {
+    fn default() -> Self {
+        // The firmware's Kconfig defaults.
+        Self {
+            enabled: false,
+            city: "New York".into(),
+            lat: "40.7128".into(),
+            lon: "-74.0060".into(),
+            tz: "EST5EDT,M3.2.0,M11.1.0".into(),
+            fahrenheit: true,
+            h24: false,
         }
     }
 }
@@ -516,6 +550,15 @@ pub struct Status {
     pub firmware: Option<String>,
     /// Unix seconds the link came up.
     pub since: Option<u64>,
+    /// The board's build: "s3", "p4rev1", "p4rev3" (hello_ok; older firmware: None).
+    #[serde(default)]
+    pub variant: Option<String>,
+    /// Where the board keeps Wi-Fi and token: "nvs" (release images work), "seed", "none".
+    #[serde(default)]
+    pub creds: Option<String>,
+    /// The location the board uses now (hello_ok; `enabled` is false).
+    #[serde(default)]
+    pub location: Option<Location>,
 }
 
 impl Status {
@@ -526,6 +569,9 @@ impl Status {
             detail: format!("Looking for {host}"),
             firmware: None,
             since: None,
+            variant: None,
+            creds: None,
+            location: None,
         }
     }
 }
@@ -891,6 +937,7 @@ mod tests {
                 "games",
                 "home",
                 "imported",
+                "location",
                 "pages",
                 "tiles"
             ]

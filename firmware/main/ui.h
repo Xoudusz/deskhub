@@ -53,3 +53,4 @@ void ui_update_show(void);
 void ui_update_progress(int pct);
 void ui_update_message(const char *text);
 void ui_update_hide(void);
+void ui_setup_needed_show(void);  // no Wi-Fi settings: flash a local build once

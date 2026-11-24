@@ -7,7 +7,9 @@ use std::sync::Mutex;
 mod updates;
 
 use deskhub_core::claude_install;
+use deskhub_core::firmware;
 use deskhub_core::http;
+use deskhub_core::secrets::{self, SecretStore};
 use deskhub_core::session::{Service, ServiceHandle};
 use deskhub_core::settings::{find_config, import_config_file, Settings, State, Status};
 use serde_json::Value;
@@ -22,6 +24,8 @@ use tauri_plugin_window_state::StateFlags;
 struct App {
     settings: Mutex<Settings>,
     file: PathBuf,
+    /// Holds the board token (Credential Manager); settings.json then keeps it blank.
+    store: Box<dyn SecretStore>,
     service: Option<ServiceHandle>,
     status: Mutex<Status>,
 }
@@ -33,7 +37,7 @@ impl App {
 
     /// Save, hand to the service, tell the frontend.
     fn apply(&self, app: &AppHandle, next: Settings) -> Result<Settings, String> {
-        save(&self.file, &next)?;
+        save(&self.file, &secrets::for_file(self.store.as_ref(), &next))?;
         *self.settings.lock().unwrap() = next.clone();
         if let Some(svc) = &self.service {
             svc.update_settings(next.clone());
@@ -187,6 +191,23 @@ async fn board_firmware(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// The Firmware card: newest release, whether this board can and should take it.
+#[tauri::command]
+async fn firmware_check(state: tauri::State<'_, App>) -> Result<firmware::Check, String> {
+    let st = state.status.lock().unwrap().clone();
+    Ok(firmware::check(&st).await)
+}
+
+/// Download the newest release image for this board, check it and send it (the board asks).
+#[tauri::command]
+async fn board_firmware_github(state: tauri::State<'_, App>) -> Result<String, String> {
+    let s = state.settings();
+    let st = state.status.lock().unwrap().clone();
+    firmware::update_board(&s.board.host, &s.board.token, &st)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 async fn board_tap(state: tauri::State<'_, App>, x: i64, y: i64) -> Result<(), String> {
     let s = state.settings();
@@ -320,11 +341,14 @@ pub fn run() {
             heal_claude_hooks();
             let handle = app.handle().clone();
             let file = app.path().app_config_dir()?.join("settings.json");
-            let (settings, first_run) = load(&file);
+            let (mut settings, first_run) = load(&file);
+            let store = secrets::system_store();
+            secrets::load_token(store.as_ref(), &mut settings);
+            // Every start: moves a token still in settings.json into the credential store.
+            if let Err(e) = save(&file, &secrets::for_file(store.as_ref(), &settings)) {
+                log::warn!("could not save settings: {e}");
+            }
             if first_run {
-                if let Err(e) = save(&file, &settings) {
-                    log::warn!("could not save settings: {e}");
-                }
                 // Start with Windows by default, hidden in the tray.
                 if let Err(e) = app.autolaunch().enable() {
                     log::warn!("autostart: {e}");
@@ -347,6 +371,9 @@ pub fn run() {
                         .into(),
                     firmware: None,
                     since: None,
+                    variant: None,
+                    creds: None,
+                    location: None,
                 };
                 (None, status)
             };
@@ -355,6 +382,7 @@ pub fn run() {
             app.manage(App {
                 settings: Mutex::new(settings),
                 file,
+                store,
                 service,
                 status: Mutex::new(status),
             });
@@ -427,6 +455,8 @@ pub fn run() {
             board_screenshot,
             board_tap,
             board_firmware,
+            firmware_check,
+            board_firmware_github,
             import_config,
             claude_status,
             claude_connect,

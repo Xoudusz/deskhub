@@ -3,6 +3,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "hub_server.h"
+#include "hubcfg.h"
 #include "net.h"
 #include "nvs_flash.h"
 #include "ota.h"
@@ -17,6 +18,7 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
+    hubcfg_load();   // Wi-Fi, token and location: NVS, seeded from a local build
 
     ESP_ERROR_CHECK(board_init());
     // Wi-Fi first, so its internal-RAM buffers are allocated before the UI grows.
@@ -25,6 +27,7 @@ void app_main(void)
 
     display_lock();
     ui_init();
+    if (net_needs_setup()) ui_setup_needed_show();
     display_unlock();
 
     hub_server_start();

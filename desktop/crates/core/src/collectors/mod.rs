@@ -11,6 +11,7 @@ use crate::settings::Settings;
 
 pub mod ai;
 pub mod alerts;
+pub mod location;
 pub mod media;
 pub mod power;
 pub mod shortcuts;
@@ -45,4 +46,5 @@ pub fn start_all(handle: &ServiceHandle) {
     tokio::spawn(shortcuts::run(Ctx::new(handle)));
     tokio::spawn(steam::run(Ctx::new(handle)));
     tokio::spawn(theme::run(Ctx::new(handle)));
+    tokio::spawn(location::run(Ctx::new(handle)));
 }

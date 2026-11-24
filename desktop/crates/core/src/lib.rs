@@ -3,9 +3,11 @@
 
 pub mod claude_install;
 pub mod collectors;
+pub mod firmware;
 pub mod http;
 pub mod pages;
 pub mod protocol;
+pub mod secrets;
 pub mod session;
 pub mod settings;
 pub mod theme;

@@ -25,9 +25,13 @@ base64 = "0.22"
 anyhow = "1"
 log = "0.4"
 sysinfo = "0.37"
+# Checks downloaded firmware images against firmware.json.
+sha2 = "0.10"
 
 # Windows-only collectors (media session, PDH GPU counters, power events, input, audio).
 [target.'cfg(windows)'.dependencies]
+# The board token in Windows Credential Manager (secrets.rs).
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
 # https for Steam CDN art and image URLs (schannel, no C compiler needed).
 reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 windows = { version = "0.62", features = [

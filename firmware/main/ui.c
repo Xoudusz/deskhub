@@ -1,3 +1,4 @@
+#include "hubcfg.h"
 #include "ui.h"
 
 #include <stdio.h>
@@ -337,12 +338,12 @@ void ui_fmt_clock(char *buf, size_t n, time_t t)
 {
     struct tm tm;
     localtime_r(&t, &tm);
-#if CONFIG_HUB_24H
-    snprintf(buf, n, "%02d:%02d", tm.tm_hour, tm.tm_min);
-#else
-    int h = tm.tm_hour % 12;
-    snprintf(buf, n, "%d:%02d %s", h ? h : 12, tm.tm_min, tm.tm_hour < 12 ? "AM" : "PM");
-#endif
+    if (hubcfg()->h24) {
+        snprintf(buf, n, "%02d:%02d", tm.tm_hour, tm.tm_min);
+    } else {
+        int h = tm.tm_hour % 12;
+        snprintf(buf, n, "%d:%02d %s", h ? h : 12, tm.tm_min, tm.tm_hour < 12 ? "AM" : "PM");
+    }
 }
 
 bool ui_limits_stale(time_t updated)
@@ -367,12 +368,12 @@ void ui_fmt_hour(char *buf, size_t n, time_t t)
 {
     struct tm tm;
     localtime_r(&t, &tm);
-#if CONFIG_HUB_24H
-    snprintf(buf, n, "%02d:00", tm.tm_hour);
-#else
-    int h = tm.tm_hour % 12;
-    snprintf(buf, n, "%d %s", h ? h : 12, tm.tm_hour < 12 ? "AM" : "PM");
-#endif
+    if (hubcfg()->h24) {
+        snprintf(buf, n, "%02d:00", tm.tm_hour);
+    } else {
+        int h = tm.tm_hour % 12;
+        snprintf(buf, n, "%d %s", h ? h : 12, tm.tm_hour < 12 ? "AM" : "PM");
+    }
 }
 
 void ui_fmt_temp(char *buf, size_t n, float t)

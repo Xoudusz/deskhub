@@ -1,5 +1,8 @@
 menu "Desk Hub"
 
+    comment "Seed values: a build with these set copies them into the board's storage (NVS)"
+    comment "on first boot and whenever they change. Release images have no Wi-Fi, so they keep what the board stores."
+
     config HUB_WIFI_SSID
         string "Wi-Fi SSID (2.4 GHz)"
         default ""

@@ -4,6 +4,7 @@
 // streamed into the spare OTA slot, checked, and made the boot image. The
 // bootloader rolls back to the previous image if the new one never starts
 // properly (see ota_mark_valid).
+#include "hubcfg.h"
 #include "ota.h"
 
 #include <stdlib.h>
@@ -145,7 +146,7 @@ static esp_err_t firmware_handler(httpd_req_t *req)
     char query[128], token[64];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
         httpd_query_key_value(query, "token", token, sizeof(token)) != ESP_OK ||
-        strcmp(token, CONFIG_HUB_TOKEN) != 0) {
+        !hubcfg_token_ok(token)) {
         return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "bad token");
     }
     const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);

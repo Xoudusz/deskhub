@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 use crate::pages::{home_message, layout_message};
 use crate::protocol::{hello, Incoming};
-use crate::settings::{Settings, State, Status};
+use crate::settings::{Location, Settings, State, Status};
 
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -204,8 +204,16 @@ enum End {
     Lost { was_up: bool },
 }
 
+/// What the board says about itself in hello_ok.
+struct Hello {
+    version: String,
+    variant: Option<String>,
+    creds: Option<String>,
+    location: Option<Location>,
+}
+
 enum Reply {
-    Hello(String),
+    Hello(Hello),
     Closed,
     Other,
 }
@@ -242,6 +250,9 @@ impl Task {
                         detail: "Wrong token?".into(),
                         firmware: None,
                         since: None,
+                        variant: None,
+                        creds: None,
+                        location: None,
                     });
                 }
                 End::Lost { was_up } => {
@@ -309,7 +320,7 @@ impl Task {
         {
             return End::Lost { was_up: false };
         }
-        let version = match timeout(self.opts.hello_timeout, read_hello(&mut ws)).await {
+        let info = match timeout(self.opts.hello_timeout, read_hello(&mut ws)).await {
             Ok(Reply::Hello(v)) => v,
             Ok(Reply::Closed) => return End::Refused,
             Ok(Reply::Other) | Err(_) => return End::Lost { was_up: false },
@@ -319,8 +330,11 @@ impl Task {
             state: State::Connected,
             host: host.clone(),
             detail: format!("connected to {host}"),
-            firmware: Some(version),
+            firmware: Some(info.version),
             since: Some(now_secs()),
+            variant: info.variant,
+            creds: info.creds,
+            location: info.location,
         });
 
         // Everything the board keeps in RAM: resent after each connect.
@@ -425,6 +439,37 @@ fn out_frame(out: &Out) -> Message {
     }
 }
 
+fn parse_hello(v: &Value) -> Hello {
+    let text = |k: &str| {
+        v.get(k)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    // Firmware with runtime settings reports its location; older firmware sends only the version.
+    let location = v.get("location").and_then(|l| {
+        let s = |k: &str| l.get(k).and_then(Value::as_str).map(str::to_string);
+        Some(Location {
+            enabled: false,
+            city: s("city")?,
+            lat: s("lat")?,
+            lon: s("lon")?,
+            tz: s("tz")?,
+            fahrenheit: l
+                .get("fahrenheit")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            h24: l.get("h24").and_then(Value::as_bool).unwrap_or(false),
+        })
+    });
+    Hello {
+        version: text("version").unwrap_or_else(|| "?".into()),
+        variant: text("variant"),
+        creds: text("creds"),
+        location,
+    }
+}
+
 /// Wait for the reply to hello. A close right after hello means the board refused
 /// the token; other socket errors only mean the link is gone.
 async fn read_hello(ws: &mut Ws) -> Reply {
@@ -437,12 +482,7 @@ async fn read_hello(ws: &mut Ws) -> Reply {
                 if v.get("type").and_then(Value::as_str) != Some("hello_ok") {
                     return Reply::Other;
                 }
-                return Reply::Hello(
-                    v.get("version")
-                        .and_then(Value::as_str)
-                        .unwrap_or("?")
-                        .to_string(),
-                );
+                return Reply::Hello(parse_hello(&v));
             }
             // A wrong token makes the board drop the socket: a close frame, or a TCP
             // close without one (ResetWithoutClosingHandshake).
@@ -573,9 +613,32 @@ mod tests {
 
         let st = wait_state(&svc, State::Connected).await;
         assert_eq!(st.firmware.as_deref(), Some("0.1.0"));
+        assert_eq!(st.variant, None);
+        assert_eq!(st.creds, None);
         assert!(st.since.is_some());
         assert_eq!(st.detail, format!("connected to 127.0.0.1:{port}"));
         svc.stop();
+    }
+
+    #[test]
+    fn hello_ok_with_board_info() {
+        let h = super::parse_hello(&json!({
+            "type": "hello_ok", "version": "firmware-v0.7.0", "variant": "p4rev1", "creds": "nvs",
+            "location": {"city": "Vienna", "lat": "48.2082", "lon": "16.3738",
+                         "tz": "CET-1CEST,M3.5.0,M10.5.0/3", "fahrenheit": false, "h24": true}
+        }));
+        assert_eq!(h.version, "firmware-v0.7.0");
+        assert_eq!(h.variant.as_deref(), Some("p4rev1"));
+        assert_eq!(h.creds.as_deref(), Some("nvs"));
+        let l = h.location.unwrap();
+        assert_eq!(
+            (l.city.as_str(), l.lat.as_str(), l.h24, l.fahrenheit),
+            ("Vienna", "48.2082", true, false)
+        );
+        assert!(!l.enabled);
+
+        let old = super::parse_hello(&json!({"type": "hello_ok", "version": "927b5fd"}));
+        assert_eq!((old.variant, old.creds, old.location), (None, None, None));
     }
 
     #[tokio::test]

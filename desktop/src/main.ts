@@ -8,7 +8,7 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type CustomGame, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 
@@ -220,7 +220,48 @@ function displayHtml(): string {
     row("Navigation bar", select(`data-k="nav"`, [["left", "Left"], ["right", "Right"], ["bottom", "Bottom"]], S.pages.nav),
       "The board restarts when this changes"),
   ].join(""));
-  return brightness + clock + night + pc;
+  return brightness + clock + night + pc + locationHtml();
+}
+
+/** POSIX time zones for the board (Kconfig HUB_TZ format). */
+const TIME_ZONES: [string, string][] = [
+  ["CET-1CEST,M3.5.0,M10.5.0/3", "Vienna, Berlin, Paris"],
+  ["GMT0BST,M3.5.0/1,M10.5.0", "London, Dublin"],
+  ["EET-2EEST,M3.5.0/3,M10.5.0/4", "Helsinki, Athens"],
+  ["EST5EDT,M3.2.0,M11.1.0", "New York"],
+  ["CST6CDT,M3.2.0,M11.1.0", "Chicago"],
+  ["MST7MDT,M3.2.0,M11.1.0", "Denver"],
+  ["PST8PDT,M3.2.0,M11.1.0", "Los Angeles"],
+  ["UTC0", "UTC"],
+];
+
+/** What the Location card edits: the app's copy once set, else what the board reports. */
+function loc(): Location {
+  return S.location.enabled ? S.location : (st.location ?? S.location);
+}
+
+function saveLocation(change: Partial<Location>) {
+  void save({ location: { ...loc(), ...change, enabled: true } });
+}
+
+function locationHtml(): string {
+  if (!S.location.enabled && !st.location) {
+    return card("Location", "Weather, clock and units on the board",
+      text(st.state === "connected" ? "This board's firmware doesn't report its location; update it first." : "Connect to the board to see and change its location."));
+  }
+  const l = loc();
+  const known = TIME_ZONES.some(([v]) => v === l.tz);
+  const zones: [string, string][] = known ? TIME_ZONES : [...TIME_ZONES, [l.tz, `Other: ${l.tz}`]];
+  return card("Location", "Weather, clock and units on the board", [
+    row("City", `<input class="txt" data-k="locCity" value="${esc(l.city)}" spellcheck="false">`, "Shown on the weather page"),
+    row("Latitude", `<input class="txt" data-k="locLat" value="${esc(l.lat)}" placeholder="48.2082" spellcheck="false">`),
+    row("Longitude", `<input class="txt" data-k="locLon" value="${esc(l.lon)}" placeholder="16.3738" spellcheck="false">`,
+      "Decimal degrees, for the weather forecast"),
+    row("Time zone", select(`data-k="locTz"`, zones, l.tz)),
+    row("24-hour clock", tgl(`data-k="locH24"`, l.h24)),
+    row("Fahrenheit and mph", tgl(`data-k="locF"`, l.fahrenheit)),
+    text(S.location.enabled ? "The board restarts when these change." : "These are the board's current values; changing one makes the app manage them."),
+  ].join(""));
 }
 
 /** Enabled pages in navigation order, Home first. */
@@ -533,26 +574,58 @@ function connectionHtml(): string {
       "Must match the token on the board"),
     row("Config file", `<button type="button" data-act="import">${icon("refresh-cw", 13)}Import from config.toml</button>`,
       S.imported ? "Already imported" : "Copies host and token from the Python companion's config"),
-  ].join("")) + card("Firmware", "Installs a new firmware on the board over Wi-Fi", [
-    row(fwBusy ? "Updating..." : "Update firmware",
-      `<button type="button" data-act="firmware"${fwBusy || st.state !== "connected" ? " disabled" : ""}>${icon("refresh-cw", 13)}Choose deskhub.bin</button>`,
-      fwBusy ? "Tap Install on the board within a minute" :
-        st.state !== "connected" ? "Connect to the board first" :
-          "The board asks before installing, then restarts. Use deskhub.bin, not the merged image"),
+  ].join("")) + firmwareHtml();
+}
+
+function firmwareHtml(): string {
+  const connected = st.state === "connected";
+  if (connected && fwCheckFor !== st.firmware) void refreshFwCheck();
+  const c = fwCheck;
+  const hint = fwBusy ? "Tap Install on the board within a minute"
+    : !connected ? "Connect to the board first"
+    : c?.blocked ?? c?.error ?? (c?.update_available ? `Version ${c.latest} is ready; the board asks before installing`
+      : c?.latest ? "The board is up to date" : "Checking GitHub...");
+  return card("Firmware", "Board updates from GitHub releases", [
+    row("Board", `<span>${esc(st.firmware ?? "-")}${st.variant ? ` <span class="muted">(${esc(st.variant)})</span>` : ""}</span>`),
+    row("Newest release", `<span>${esc(c?.latest ?? "-")}</span>` +
+      `<button type="button" class="ib" data-act="fw-recheck" title="Check again"${fwChecking || !connected ? " disabled" : ""}>${icon("refresh-cw", 13)}</button>`),
+    row(fwBusy ? "Updating..." : "Update",
+      `<button type="button" data-act="firmware-github"${fwBusy || !connected || !c?.update_available ? " disabled" : ""}>${icon("refresh-cw", 13)}Update board</button>`,
+      hint),
+    row("From a file",
+      `<button type="button" data-act="firmware"${fwBusy || !connected ? " disabled" : ""}>Choose deskhub.bin</button>`,
+      "A local build (out/<board>/deskhub.bin, not the merged image)"),
     ...(fwNote ? [text(esc(fwNote))] : []),
   ].join(""));
+}
+
+// Newest release for the connected board; checked again whenever its firmware version changes.
+let fwCheck: FirmwareCheck | null = null;
+let fwCheckFor: string | null | undefined;
+let fwChecking = false;
+
+async function refreshFwCheck() {
+  fwCheckFor = st.firmware;
+  fwChecking = true;
+  try {
+    fwCheck = await api.firmwareCheck();
+  } catch (err) {
+    fwCheck = { latest: null, update_available: false, blocked: null, error: String(err) };
+  }
+  fwChecking = false;
+  if (section === "connection") render(true);
 }
 
 // Firmware upload state (Connection section).
 let fwBusy = false;
 let fwNote = "";
 
-async function updateFirmware() {
+async function updateFirmware(fromGithub = false) {
   fwBusy = true;
   fwNote = "";
   render(true);
   try {
-    const answer = await api.boardFirmware();
+    const answer = fromGithub ? await api.boardFirmwareGithub() : await api.boardFirmware();
     fwNote = answer.includes("installed") ? "Installed. The board restarts and reconnects in a few seconds." : answer;
   } catch (err) {
     const msg = String(err);
@@ -654,6 +727,8 @@ async function act(el: HTMLElement) {
     case "import": await importConfig(); return;
     case "update-check": checkUpdates(); return;
     case "firmware": await updateFirmware(); return;
+    case "firmware-github": await updateFirmware(true); return;
+    case "fw-recheck": render(true); await refreshFwCheck(); return;
     case "game-image": {
       const path = await api.pickImage();
       if (path) gamePatch({ image: path });
@@ -715,6 +790,21 @@ main.addEventListener("change", e => {
       applyTheme();
       void save({ appearance: { theme: S.appearance.theme } });
       return;
+    case "locCity": {
+      const city = t.value.trim();
+      if (city) saveLocation({ city });
+      else render(true);
+      return;
+    }
+    case "locLat":
+    case "locLon": {
+      const v = t.value.trim();
+      const max = k === "locLat" ? 90 : 180;
+      if (/^-?\d{1,3}(\.\d+)?$/.test(v) && Math.abs(Number(v)) <= max) saveLocation(k === "locLat" ? { lat: v } : { lon: v });
+      else render(true);
+      return;
+    }
+    case "locTz": saveLocation({ tz: t.value }); return;
     case "host": {
       const host = t.value.trim();
       if (host) void save({ board: { host } });
@@ -766,6 +856,8 @@ main.addEventListener("change", e => {
       if (c) resizeBlock(k === "blockW" ? Number(t.value) : c.w, k === "blockH" ? Number(t.value) : c.h);
       return;
     }
+    case "locH24": saveLocation({ h24: on }); return;
+    case "locF": saveLocation({ fahrenheit: on }); return;
     case "clockSeconds":
       void save({ display: { clock_seconds: on } });
       return;

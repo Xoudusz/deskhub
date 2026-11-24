@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "hubcfg.h"
 #include "icons.h"
 #include "logos.h"
 #include "net.h"
@@ -807,11 +808,7 @@ static void update_header(const struct tm *tm, const char *time_text)
         lv_label_set_text(s_hdr_time, time_text);
         lv_obj_update_layout(s_hdr_time);
     }
-#if CONFIG_HUB_24H
-    lv_label_set_text(s_hdr_ampm, "");
-#else
-    lv_label_set_text(s_hdr_ampm, tm->tm_hour < 12 ? "AM" : "PM");
-#endif
+    lv_label_set_text(s_hdr_ampm, hubcfg()->h24 ? "" : tm->tm_hour < 12 ? "AM" : "PM");
     lv_obj_align_to(s_hdr_ampm, s_hdr_time, LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -7);
     char d[40];
     strftime(d, sizeof(d), "%A, %B %e", tm);
@@ -1093,13 +1090,13 @@ void home_tick(void)
     struct tm tm;
     localtime_r(&now, &tm);
     char buf[64];
-#if CONFIG_HUB_24H
-    snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
-#else
-    int h = tm.tm_hour % 12;
-    snprintf(buf, sizeof(buf), "%d:%02d", h ? h : 12, tm.tm_min);
-    lv_label_set_text(s_ampm, tm.tm_hour < 12 ? "AM" : "PM");
-#endif
+    if (hubcfg()->h24) {
+        snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
+    } else {
+        int h = tm.tm_hour % 12;
+        snprintf(buf, sizeof(buf), "%d:%02d", h ? h : 12, tm.tm_min);
+        lv_label_set_text(s_ampm, tm.tm_hour < 12 ? "AM" : "PM");
+    }
     if (s_seconds) {
         size_t len = strlen(buf);
         snprintf(buf + len, sizeof(buf) - len, ":%02d", tm.tm_sec);
@@ -1163,11 +1160,7 @@ static void update_date(const struct tm *tm)
     // Narrow column, under a clock that fills it: the date on the left and AM/PM
     // right-aligned at the column's edge, so the line spans the full width. The
     // size is the largest that fits the most complete format (>= 20 px).
-#if CONFIG_HUB_24H
-    const char *ampm = NULL;
-#else
-    const char *ampm = tm->tm_hour < 12 ? "AM" : "PM";
-#endif
+    const char *ampm = hubcfg()->h24 ? NULL : tm->tm_hour < 12 ? "AM" : "PM";
 #define NEED(t, f) (text_width((t), (f), 0) + (ampm ? 18 + text_width(ampm, (f), 0) : 0))
     int px = 20;
     for (int i = 0; i < nfmt; i++) {

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "hubcfg.h"
 #include "icons.h"
 #include "sdkconfig.h"
 #include "ui_internal.h"
@@ -37,7 +38,7 @@ void weather_page_create(lv_obj_t *page)
     lv_obj_set_pos(s_temp, 110, c ? 0 : 6);
     s_cond = ui_label(now, g_font_20, COL_TEXT, "Loading weather");
     lv_obj_set_pos(s_cond, 112, c ? 52 : 64);
-    s_city = ui_label(now, g_font_16, COL_MUTED, CONFIG_HUB_CITY);
+    s_city = ui_label(now, g_font_16, COL_MUTED, hubcfg()->city);
     lv_obj_set_pos(s_city, 112, c ? 76 : 94);
     s_details = ui_label(now, g_font_16, COL_TEXT, "");
     lv_obj_set_style_text_line_space(s_details, 8, 0);
@@ -94,12 +95,7 @@ void weather_page_refresh(void)
     lv_label_set_text(s_cond, weather_text(w->code));
 
     ui_fmt_temp(a, sizeof(a), w->feels);
-    // CONFIG_HUB_FAHRENHEIT is undefined when off, so test it with #if.
-#if CONFIG_HUB_FAHRENHEIT
-    const char *wind_unit = "mph";
-#else
-    const char *wind_unit = "km/h";
-#endif
+    const char *wind_unit = hubcfg()->fahrenheit ? "mph" : "km/h";
     snprintf(buf, sizeof(buf), "Feels like %s\nHumidity %d%%\nWind %d %s", a, w->humidity, (int)(w->wind + 0.5f),
              wind_unit);
     lv_label_set_text(s_details, buf);

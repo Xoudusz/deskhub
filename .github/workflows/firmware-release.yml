@@ -1,0 +1,109 @@
+# Publishes board firmware: push a tag "firmware-vX.Y.Z". Builds every board variant WITHOUT
+# sdkconfig.local (no Wi-Fi, token or location inside: boards keep theirs in NVS), uploads
+# deskhub-<variant>.bin and firmware.json {version, assets: {variant: {url, sha256, size}}} to
+# release "firmware-vX.Y.Z", and copies firmware.json to the fixed release "firmware-latest",
+# which the desktop app reads (desktop/crates/core/src/firmware.rs).
+name: Firmware release
+
+on:
+  push:
+    tags: ["firmware-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [s3, p4rev1, p4rev3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs the tag
+
+      - name: No local settings in a release image
+        run: |
+          test ! -e firmware/sdkconfig.local || { echo "sdkconfig.local must not exist in CI"; exit 1; }
+
+      - name: Version is the tag
+        run: |
+          v=$(git describe --tags --match 'firmware-v*' --exact-match)
+          test "$v" = "$GITHUB_REF_NAME" || { echo "describe $v != $GITHUB_REF_NAME"; exit 1; }
+
+      - name: Build (ESP-IDF 5.5.4 in Docker)
+        run: firmware/build.sh ${{ matrix.variant }}
+
+      - name: Image carries the release version and no Wi-Fi settings
+        run: |
+          bin=firmware/out/${{ matrix.variant }}/deskhub.bin
+          grep -q "$GITHUB_REF_NAME" "$bin" || { echo "version string missing"; exit 1; }
+          cfg=firmware/build/${{ matrix.variant }}/sdkconfig
+          grep -q '^CONFIG_HUB_WIFI_SSID=""$' "$cfg" || { echo "SSID set"; exit 1; }
+          grep -q '^CONFIG_HUB_WIFI_PASSWORD=""$' "$cfg" || { echo "Wi-Fi password set"; exit 1; }
+          # The token stays the public Kconfig default; without an SSID the board ignores it.
+          grep -q '^CONFIG_HUB_TOKEN="change-me"$' "$cfg" || { echo "token set"; exit 1; }
+          cp "$bin" deskhub-${{ matrix.variant }}.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskhub-${{ matrix.variant }}
+          path: deskhub-${{ matrix.variant }}.bin
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: firmware.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd out
+          python3 - <<'EOF'
+          import hashlib, json, os
+          tag, repo = os.environ["TAG"], os.environ["GITHUB_REPOSITORY"]
+          assets = {}
+          for v in ["s3", "p4rev1", "p4rev3"]:
+              name = f"deskhub-{v}.bin"
+              data = open(name, "rb").read()
+              assets[v] = {
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{name}",
+                  "sha256": hashlib.sha256(data).hexdigest(),
+                  "size": len(data),
+              }
+          json.dump({"version": tag, "assets": assets}, open("firmware.json", "w"), indent=2)
+          EOF
+          cat firmware.json
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd out
+          R="--repo $GITHUB_REPOSITORY"
+          gh release view "$TAG" $R >/dev/null 2>&1 || \
+            gh release create "$TAG" $R --title "Desk Hub firmware ${TAG#firmware-}" --latest=false \
+              --notes "Board firmware ${TAG#firmware-}. The desktop app installs it (Connection > Firmware). Boards need one local build first (firmware/build.sh with sdkconfig.local) to store Wi-Fi and token."
+          gh release upload "$TAG" $R deskhub-s3.bin deskhub-p4rev1.bin deskhub-p4rev3.bin firmware.json --clobber
+          # Only a newer release moves firmware-latest (re-tagging an old version must not roll apps back).
+          mkdir -p current
+          if gh release download firmware-latest $R --pattern firmware.json --dir current 2>/dev/null; then
+            newer=$(python3 -c '
+          import json, os, re
+          def v(t): return tuple(int(x) for x in re.match(r"firmware-v(\d+)\.(\d+)\.(\d+)$", t).groups())
+          cur = json.load(open("current/firmware.json"))["version"]
+          print("yes" if v(os.environ["TAG"]) > v(cur) else "no")')
+            if [ "$newer" != yes ]; then echo "firmware-latest stays (not newer)"; exit 0; fi
+          fi
+          gh release view firmware-latest $R >/dev/null 2>&1 || \
+            gh release create firmware-latest $R --title "Desk Hub firmware updater" --latest=false \
+              --notes "firmware.json for the desktop app. Images are in the newest firmware-v release."
+          gh release upload firmware-latest $R firmware.json --clobber

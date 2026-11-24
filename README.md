@@ -181,6 +181,8 @@ It builds the firmware and sends it to the board over Wi-Fi. The board shows **I
 
 If a new firmware can't start properly, the board goes back to the previous one by itself on the next restart.
 
+**Release images from GitHub.** The board keeps Wi-Fi, token, hostname and location in its storage (NVS); release images are built without `sdkconfig.local`, so they contain no Wi-Fi or token of yours (only the public defaults, which the board ignores). A local build (with `sdkconfig.local`) copies its settings in on first boot and again whenever you change them, so build and flash locally once. After that the board can take the public images from the [firmware releases](https://github.com/Xoudusz/deskhub/releases) (tag `firmware-vX.Y.Z`): the desktop app offers them under Connection > Firmware and only when the board reports its settings in storage. A release image on a board that never ran a local build has no Wi-Fi and shows **Desk Hub needs setup**. To publish one, push a `firmware-vX.Y.Z` tag; `.github/workflows/firmware-release.yml` builds s3, p4rev1 and p4rev3 without `sdkconfig.local` and writes `firmware.json` to the release `firmware-latest`.
+
 ### 4. Start the companion
 
 ```powershell
@@ -703,7 +705,7 @@ The board's fonts only cover Latin letters. Accented letters in labels, event ti
 
 ## How it works
 
-The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion connects, sends `{"type": "hello", "token": ...}`, and once the board answers `hello_ok` it streams JSON messages:
+The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion connects, sends `{"type": "hello", "token": ...}`, and once the board answers `hello_ok` it streams JSON messages. `hello_ok` carries `version`, `variant` (`s3`, `p4rev1` or `p4rev3`), `creds` (`nvs` once Wi-Fi and token are in the board's storage, `seed` or `none`) and `location` (`city`, `lat`, `lon`, `tz`, `fahrenheit`, `h24`).
 
 | From the PC | Contents |
 | --- | --- |
@@ -713,6 +715,7 @@ The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion conn
 | `events` | Up to 16 events with `title`, `loc`, `cal`, `start`/`end` (Unix time), `all_day`, `color`. |
 | `tiles` | Up to 16 buttons with `label`, `icon`, `color`. |
 | `layout` | `pages`, the page names to show; `nav` (`left`, `right` or `bottom`); `pc_sleep` (`off`, `clock` or `none`); `night_start`/`night_end` (minutes after midnight, -1 = no night mode) and `night_style` (`off` or `clock`). Sent right after `hello_ok`. |
+| `location` | `city`, `lat`, `lon` (decimal strings), `tz` (POSIX), `fahrenheit`, `h24`. Saved on the board; it restarts when they change. Sent by the desktop app once you edit the Location card. |
 | `home` | `header` (time and date in a top bar) and `grid`, a list of `widget`, `x`, `y`, `w`, `h`. Also `left` and `right` columns of widget names, which firmware from before the grid uses instead. Sent right after `layout`. |
 | `pc_power` | `asleep`: whether the PC's screen is off or the PC is going to sleep. Sent after each connect and when it changes. |
 | `alert` | A Claude Code session waiting for you: `id`, `kind` (`permission` or `input`), `agent`, `title`, `detail` and `project`; or `clear: true` when nothing is waiting. |

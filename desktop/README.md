@@ -21,6 +21,8 @@ Commands (`invoke`):
 | `get_status` | – | `Status` |
 | `board_screenshot` | – | `string`: PNG as a `data:image/png;base64,...` URL (800x480) |
 | `board_tap` | `{ x: number, y: number }` (board pixels, 0-799 / 0-479) | `null` |
+| `firmware_check` | – | `{ latest: string \| null, update_available: boolean, blocked: string \| null, error: string \| null }`: newest `firmware-latest/firmware.json` release for the connected board |
+| `board_firmware_github` | – | `string`: downloads the release image for the board's variant, checks sha256 and size, sends it (`POST /firmware`, the board asks first). Refused unless the board reports `creds: "nvs"` and a known variant |
 | `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):
@@ -61,6 +63,8 @@ type Settings = {
     presets_disabled: string[];
     custom: { name: string; process: string[]; match: string; title: string; image: string; launch: string }[];
   };
+  location: { enabled: boolean; city: string; lat: string; lon: string; tz: string; fahrenheit: boolean; h24: boolean };
+                                 // sent to the board ("location") only once enabled; until then the UI shows the board's values
   imported: boolean;             // config.toml already imported once
 };
 
@@ -70,7 +74,13 @@ type Status = {
   detail: string;                // human text, e.g. "Looking for deskhub.local", "Wrong token"
   firmware: string | null;       // version from hello_ok
   since: number | null;          // unix seconds the link came up
+  variant: string | null;        // "s3" | "p4rev1" | "p4rev3" (hello_ok; older firmware: null)
+  creds: string | null;          // "nvs" | "seed" | "none": release images need "nvs"
+  location: Location | null;     // what the board uses now (enabled: false)
 };
+
+The board token lives in Windows Credential Manager ("Desk Hub" / "board-token", `crates/core/src/secrets.rs`);
+`settings.json` keeps it blank once the store holds it. `get_settings` still returns it.
 ```
 
 Pages known to the board: home, stats, ai, calendar, weather, media, printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
