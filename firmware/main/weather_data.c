@@ -134,3 +134,12 @@ bool weather_parse(const char *body, hub_weather_t *w)
     return ok;
 }
 
+uint32_t weather_color(int code, bool is_day)
+{
+    if (code <= 1) return is_day ? 0xfbbf5a : 0xc08cff;
+    if (code == 2) return is_day ? 0xfcd38d : 0xa9b4ff;
+    if (code == 3 || code == 45 || code == 48) return 0xaeb7e0;
+    if ((code >= 71 && code <= 77) || code == 85 || code == 86) return 0xe6f0ff;
+    if (code >= 95) return 0xc08cff;
+    return 0x67e8f9; // drizzle and rain
+}

@@ -4,3 +4,6 @@ dist
 target
 src-tauri/gen
 src-tauri/binaries
+
+# Board simulator build output (firmware/sim/build.sh)
+public/sim/
