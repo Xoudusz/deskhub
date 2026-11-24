@@ -193,6 +193,7 @@ const mock: Settings = {
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
+let mockAutostart = true;
 const subs = { status: new Set<(s: Status) => void>(), settings: new Set<(s: Settings) => void>() };
 
 function mockEmitSettings() {
@@ -237,6 +238,9 @@ export const api = {
     await new Promise(r => setTimeout(r, 1500));
     return "installed; restarting";
   },
+  /** Start with Windows; the setter returns the state Windows reports afterwards. */
+  autostartGet: (): Promise<boolean> => (TAURI ? invoke<boolean>("autostart_get") : Promise.resolve(mockAutostart)),
+  autostartSet: (on: boolean): Promise<boolean> => (TAURI ? invoke<boolean>("autostart_set", { on }) : Promise.resolve((mockAutostart = on))),
   /** Newest firmware release for this board (GitHub). */
   firmwareCheck: (): Promise<FirmwareCheck> => (TAURI ? invoke<FirmwareCheck>("firmware_check")
     : Promise.resolve({ latest: "firmware-v0.7.0", update_available: true, blocked: null, error: null })),

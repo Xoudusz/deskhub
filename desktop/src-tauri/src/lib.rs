@@ -191,6 +191,24 @@ async fn board_firmware(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Start with Windows (on by default: the first run enables it).
+#[tauri::command]
+fn autostart_get(app: tauri::AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn autostart_set(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
+    let launcher = app.autolaunch();
+    let done = if on {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    done.map_err(|e| e.to_string())?;
+    launcher.is_enabled().map_err(|e| e.to_string())
+}
+
 /// The Firmware card: newest release, whether this board can and should take it.
 #[tauri::command]
 async fn firmware_check(state: tauri::State<'_, App>) -> Result<firmware::Check, String> {
@@ -456,6 +474,8 @@ pub fn run() {
             board_tap,
             board_firmware,
             firmware_check,
+            autostart_get,
+            autostart_set,
             board_firmware_github,
             import_config,
             claude_status,

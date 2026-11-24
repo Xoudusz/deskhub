@@ -728,9 +728,16 @@ async function updateFirmware(fromGithub = false) {
   render(true);
 }
 
+/** Start with Windows, as Windows reports it. Busy: a change is on its way (one at a time). */
+let autostart = true;
+let autostartBusy = false;
+let autostartNote = "";
+
 function aboutHtml(): string {
   return card("Desk Hub", "Board companion for Windows", [
     row("Version", `<span>${esc(version)}</span>`, TAURI ? esc(aboutUpdate) : ""),
+    row("Start with Windows", tgl(`data-k="autostart"`, autostart, autostartBusy),
+      autostartNote || "Hidden in the tray, so the board stays connected"),
     TAURI ? row("Updates", `<button type="button" data-act="update-check"${updChecking ? " disabled" : ""}>${icon("refresh-cw", 13)}Check now</button>`,
       "New versions download in the background; the button at the top installs them") : "",
     text("Replaces the Python companion for media, PC stats, Claude usage, shortcuts and games."),
@@ -951,6 +958,14 @@ main.addEventListener("change", e => {
       return;
     }
     case "locH24": saveLocation({ h24: on }); return;
+    case "autostart":
+      if (autostartBusy) return;
+      autostartBusy = true;
+      autostartNote = "";
+      void api.autostartSet(on)
+        .then(v => { autostart = v; }, err => { autostartNote = `Windows refused: ${err}`; })
+        .finally(() => { autostartBusy = false; render(true); });
+      return;
     case "locF": saveLocation({ fahrenheit: on }); return;
     case "clockSeconds":
       void save({ display: { clock_seconds: on } });
@@ -1029,6 +1044,10 @@ async function boot() {
   S = await api.getSettings();
   st = await api.getStatus();
   version = await appVersion();
+  autostart = await api.autostartGet().catch(err => {
+    autostartNote = `Couldn't read the Windows setting: ${err}`;
+    return false;
+  });
   applyTheme();
   setDot();
   renderNav();
