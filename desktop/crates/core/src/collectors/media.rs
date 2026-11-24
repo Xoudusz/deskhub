@@ -163,7 +163,7 @@ pub fn square_crop(w: u32, h: u32) -> (u32, u32, u32) {
 /// Packs interleaved RGB8 pixels into RGB565 little-endian bytes.
 pub fn rgb_to_rgb565_le(rgb: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(rgb.len() / 3 * 2);
-    for p in rgb.chunks_exact(3) {
+    for p in rgb.as_chunks::<3>().0 {
         let v = ((u16::from(p[0]) & 0xF8) << 8)
             | ((u16::from(p[1]) & 0xFC) << 3)
             | (u16::from(p[2]) >> 3);
@@ -567,7 +567,11 @@ mod tests {
         assert_eq!(&frame[10..12], &280u16.to_le_bytes());
         assert_eq!(frame.len(), 12 + 280 * 280 * 2);
         // Solid red stays solid red after crop and resize: RGB565 0xF800, little endian.
-        assert!(frame[12..].chunks_exact(2).all(|px| px == [0x00, 0xF8]));
+        assert!(frame[12..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .all(|px| px == &[0x00, 0xF8]));
     }
 
     #[test]

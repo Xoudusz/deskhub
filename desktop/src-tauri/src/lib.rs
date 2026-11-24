@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use deskhub_core::claude_install;
 use deskhub_core::http;
 use deskhub_core::session::{Service, ServiceHandle};
 use deskhub_core::settings::{find_config, import_config_file, Settings, State, Status};
@@ -176,6 +177,85 @@ fn import_config(
     state.apply(&app, next)
 }
 
+// ---- Claude Code status line + hooks (AI section) -----------------------------
+
+/// Claude Code's settings.json (CLAUDE_CONFIG_DIR wins, like Claude Code itself).
+fn claude_settings_path() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir).join("settings.json"));
+    }
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
+    Some(PathBuf::from(home).join(".claude").join("settings.json"))
+}
+
+/// deskhub-cli's state folder: DESKHUB_HOME or the user's home, then .deskhub (same rule
+/// as deskhub-cli's store::deskhub_dir, so it finds statusline_previous.json).
+fn deskhub_state_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("DESKHUB_HOME")
+        .filter(|v| !v.is_empty())
+        .or_else(|| std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }))?;
+    Some(PathBuf::from(home).join(".deskhub"))
+}
+
+/// deskhub-cli next to the app (the installer puts it there).
+fn cli_path() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "deskhub-cli.exe"
+    } else {
+        "deskhub-cli"
+    };
+    Some(std::env::current_exe().ok()?.parent()?.join(name))
+}
+
+fn claude_state() -> Value {
+    let (Some(settings), Some(cli)) = (claude_settings_path(), cli_path()) else {
+        return serde_json::json!({ "statusline": false, "hooks": false, "cli": false });
+    };
+    let st = claude_install::status(&settings, &cli);
+    serde_json::json!({ "statusline": st.statusline, "hooks": st.hooks, "cli": cli.is_file() })
+}
+
+#[tauri::command]
+fn claude_status() -> Value {
+    claude_state()
+}
+
+/// Connect (on) or disconnect Claude Code: status line + hooks pointing at deskhub-cli.
+#[tauri::command]
+fn claude_connect(on: bool) -> Result<Value, String> {
+    let settings = claude_settings_path().ok_or("No home folder")?;
+    let dir = deskhub_state_dir().ok_or("No home folder")?;
+    if on {
+        let cli = cli_path()
+            .filter(|p| p.is_file())
+            .ok_or("deskhub-cli is missing next to the app")?;
+        claude_install::install_in(&settings, &dir, &cli, claude_install::What::All)
+            .map_err(|e| format!("{e:#}"))?;
+    } else {
+        claude_install::remove_in(&settings, &dir, claude_install::What::All)
+            .map_err(|e| format!("{e:#}"))?;
+    }
+    Ok(claude_state())
+}
+
+/// After an update or a move the exe path changes: if Claude Code points at some
+/// deskhub-cli but not this one, point it here again.
+fn heal_claude_hooks() {
+    let (Some(settings), Some(cli), Some(dir)) =
+        (claude_settings_path(), cli_path(), deskhub_state_dir())
+    else {
+        return;
+    };
+    let mentions = std::fs::read_to_string(&settings).is_ok_and(|t| t.contains("deskhub-cli"));
+    let st = claude_install::status(&settings, &cli);
+    if mentions && cli.is_file() && !(st.statusline && st.hooks) {
+        match claude_install::install_in(&settings, &dir, &cli, claude_install::What::All) {
+            Ok(()) => log::info!("Claude Code hooks re-pointed to {}", cli.display()),
+            Err(e) => log::warn!("Claude Code hooks: {e:#}"),
+        }
+    }
+}
+
 // ---- app ---------------------------------------------------------------------
 
 pub fn run() {
@@ -203,6 +283,7 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            heal_claude_hooks();
             let handle = app.handle().clone();
             let file = app.path().app_config_dir()?.join("settings.json");
             let (settings, first_run) = load(&file);
@@ -309,7 +390,9 @@ pub fn run() {
             get_status,
             board_screenshot,
             board_tap,
-            import_config
+            import_config,
+            claude_status,
+            claude_connect
         ])
         .build(tauri::generate_context!())
         .expect("error while building Desk Hub")

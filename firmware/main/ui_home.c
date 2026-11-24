@@ -97,10 +97,10 @@ static lv_obj_t *widget_card(lv_obj_t *parent, int page)
 static int s_date_px = 24;   // date font size; the clock widget's height follows it
 #define CLOCK_DATE_H (s_date_px * 5 / 4 + 2)
 static void update_date(const struct tm *tm);
-#define CLOCK_CELLS 5
+#define CLOCK_CELLS 8   // "12:34:56" with seconds
 
 static lv_obj_t *s_clock_box, *s_cell[CLOCK_CELLS];
-static char s_time[8] = "--:--";
+static char s_time[12] = "--:--";  // up to "12:34:56"
 static lv_font_t *s_clock_font;
 static bool s_clock_narrow;
 
@@ -120,6 +120,21 @@ static int time_digits(void)
     return n ? n : 4;
 }
 
+static int time_colons(void)
+{
+    int n = 0;
+    for (const char *p = s_time; *p; p++) n += *p == ':';
+    return n ? n : 1;
+}
+
+// Seconds on the Home clock (layout message "seconds"); the next tick re-lays it out.
+static bool s_seconds;
+
+void ui_set_clock_seconds(bool on)
+{
+    s_seconds = on;
+}
+
 // Geometry from the 128 px font's metrics, scaled linearly (no font is created here).
 // max_h > 0: also shrink the digits so the clock and its date fit that height (grid cells).
 static clock_geo_t clock_geo(int w, int max_h)
@@ -128,7 +143,7 @@ static clock_geo_t clock_geo(int w, int max_h)
     const lv_font_t *f = g_font_clock;
     int cell = lv_font_get_glyph_width(f, '0', '0');
     int colon = lv_font_get_glyph_width(f, ':', '0');
-    int tw = time_digits() * cell + colon;
+    int tw = time_digits() * cell + time_colons() * colon;
     g.narrow = w < 340;
     int avail = g.narrow ? w : w - 64;  // the wide column keeps room for AM/PM beside it
     g.px = tw > 0 ? CLOCK_PX * avail / tw : CLOCK_PX;
@@ -980,6 +995,17 @@ void home_set_layout(const char *spec)
         nvs_close(h);
     }
     home_apply_layout();
+    // Widgets that were hidden or changed size lay their content out again; without
+    // this a new block stayed empty until the next full rebuild (page toggle).
+    home_refresh_events();
+    home_refresh_media();
+    home_refresh_stats();
+    home_refresh_claude();
+    home_refresh_weather();
+    home_refresh_printer();
+    home_refresh_game();
+    home_refresh_net();
+    home_refresh_github();
 }
 
 void home_create(lv_obj_t *page)
@@ -1075,6 +1101,10 @@ void home_tick(void)
     snprintf(buf, sizeof(buf), "%d:%02d", h ? h : 12, tm.tm_min);
     lv_label_set_text(s_ampm, tm.tm_hour < 12 ? "AM" : "PM");
 #endif
+    if (s_seconds) {
+        size_t len = strlen(buf);
+        snprintf(buf + len, sizeof(buf) - len, ":%02d", tm.tm_sec);
+    }
     if (s_header) {
         update_header(&tm, buf);
         return;  // the clock widget is hidden in this mode
@@ -1082,7 +1112,7 @@ void home_tick(void)
     if (strcmp(s_time, buf) != 0) {
         int digits_before = time_digits();
         strlcpy(s_time, buf, sizeof(s_time));
-        if (time_digits() != digits_before) {
+        if (time_digits() != digits_before) {  // also when seconds are switched on/off
             home_apply_layout();  // e.g. 9:59 -> 10:00: new size, so the column may reflow
         } else {
             clock_geo_t g = clock_geo(lv_obj_get_width(s_w[W_CLOCK]), lv_obj_get_height(s_w[W_CLOCK]));

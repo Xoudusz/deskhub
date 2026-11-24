@@ -7,11 +7,11 @@ import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
   api, win, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
-  type Page, type Settings, type SettingsPatch, type Status, type Widget,
+  type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 
-type SectionId = "status" | "display" | "pages" | "appearance" | "connection" | "about";
+type SectionId = "status" | "display" | "pages" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
 type Cell = Settings["home"]["grid"][number];
 
@@ -19,6 +19,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["status", "gauge", "Status"],
   ["display", "sun", "Display"],
   ["pages", "layout-grid", "Pages"],
+  ["ai", "sparkles", "AI agents"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
   ["about", "info", "About"],
@@ -147,6 +148,7 @@ function sectionHtml(): string {
     case "status": return statusHtml();
     case "display": return displayHtml();
     case "pages": return pagesHtml();
+    case "ai": return aiHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
     case "about": return aboutHtml();
@@ -172,6 +174,7 @@ function displayHtml(): string {
   const nightOn = d.night !== "";
   const [from, to] = nightOn ? d.night.split("-") : ["22:00", "07:00"];
   const brightness = card("Brightness", "", slider("brightness", "Brightness", 1, 100, d.brightness));
+  const clock = card("Clock", "", row("Show seconds", tgl(`data-k="clockSeconds"`, d.clock_seconds), "Home clock on the board"));
   const night = card("Night", "Dims the board after dark", [
     row(`${icon("moon", 14)}Night mode`, tgl(`data-k="nightOn"`, nightOn)),
     ...(nightOn
@@ -188,7 +191,7 @@ function displayHtml(): string {
     row("Navigation bar", select(`data-k="nav"`, [["left", "Left"], ["right", "Right"], ["bottom", "Bottom"]], S.pages.nav),
       "The board restarts when this changes"),
   ].join(""));
-  return brightness + night + pc;
+  return brightness + clock + night + pc;
 }
 
 /** Enabled pages in navigation order, Home first. */
@@ -222,10 +225,27 @@ function pagesHtml(): string {
   }).join("");
   const free = WIDGETS.filter(w => !S.home.grid.some(c => c.widget === w));
   const addOpts: [string, string][] = [["", "Choose..."], ...free.map(w => [w, WIDGET_LABELS[w]] as [string, string])];
-  const home = card("Home screen", "5 columns by 3 rows. Blocks can't overlap.", [
+  const presetOpts: [string, string][] = [
+    ["", "Choose..."],
+    ...BUILTIN_PRESETS.map((p, i) => [`b${i}`, p.name] as [string, string]),
+    ...S.home.presets.map((p, i) => [`u${i}`, `${p.name} (yours)`] as [string, string]),
+  ];
+  const own = presetSel.startsWith("u");
+  const home = card("Home screen", "5 columns by 3 rows. Click a block to resize it.", [
+    row("Layout",
+      select(`data-k="homePreset"`, presetOpts, presetSel) +
+      `<button type="button" data-act="preset-apply"${presetSel ? "" : " disabled"}>Apply</button>` +
+      (own ? `<button type="button" class="ib" data-act="preset-delete" title="Delete this preset">${icon("x", 13)}</button>` : ""),
+      "Presets replace the blocks and the header setting"),
     row("Show header", tgl(`data-k="homeHeader"`, S.home.header)),
     `<div class="grid-wrap">${gridHtml()}</div>`,
+    sizeRow(),
     row("Add a block", select(`data-k="homeAdd"`, addOpts, "", free.length === 0), esc(homeNote)),
+    row("Save as preset",
+      `<input class="txt" data-k="presetName" placeholder="Name" maxlength="24" value="${esc(presetName)}" spellcheck="false">` +
+      `<button type="button" data-act="preset-save">${icon("plus", 13)}Save</button>`),
+    row("Reset", `<button type="button" data-act="home-reset">${icon("refresh-cw", 13)}Reset to default</button>`,
+      "Default blocks with the header on"),
   ].join(""));
   return card("Pages", "Enabled pages keep this order in the navigation bar", rows) + home;
 }
@@ -235,7 +255,7 @@ function gridHtml(): string {
   const blocks = S.home.grid.map((c, i) => {
     for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) occupied.add(`${x},${y}`);
     const label = WIDGET_LABELS[c.widget as Widget] ?? c.widget;
-    return `<div class="hblock" style="grid-column:${c.x + 1} / span ${c.w};grid-row:${c.y + 1} / span ${c.h}">` +
+    return `<div class="hblock${i === selBlock ? " sel" : ""}" data-act="grid-select" data-idx="${i}" style="grid-column:${c.x + 1} / span ${c.w};grid-row:${c.y + 1} / span ${c.h}">` +
       `<span>${esc(label)}<small>${c.w} x ${c.h}</small></span>` +
       `<button type="button" class="ib" data-act="grid-remove" data-idx="${i}" title="Remove">${icon("x", 11)}</button></div>`;
   }).join("");
@@ -262,7 +282,118 @@ function findSpot(w: Widget): Cell | null {
 
 function removeCell(i: number) {
   homeNote = "";
+  selBlock = -1;
   void save({ home: { grid: S.home.grid.filter((_, j) => j !== i) } });
+}
+
+// ---- Home builder: selection, resize, presets ----
+let selBlock = -1;
+let presetSel = "";
+let presetName = "";
+
+/** Whether block `i` can take size w x h at its spot: inside the grid, no overlap. */
+function sizeFits(i: number, w: number, h: number): boolean {
+  const c = S.home.grid[i];
+  if (c.x + w > GRID_COLS || c.y + h > GRID_ROWS) return false;
+  return S.home.grid.every((o, j) => j === i || !(o.x < c.x + w && c.x < o.x + o.w && o.y < c.y + h && c.y < o.y + o.h));
+}
+
+function sizeRow(): string {
+  const c = S.home.grid[selBlock];
+  if (!c) return row("Size", `<span class="muted">Click a block</span>`);
+  const sz = HOME_SIZES[c.widget as Widget];
+  if (!sz) return "";
+  const opts = (lo: number, hi: number, fit: (v: number) => boolean) => {
+    const o: [string, string][] = [];
+    for (let v = lo; v <= hi; v++) if (fit(v)) o.push([String(v), String(v)]);
+    return o;
+  };
+  const ws = opts(sz.w[0], sz.w[1], v => sizeFits(selBlock, v, c.h));
+  const hs = opts(sz.h[0], sz.h[1], v => sizeFits(selBlock, c.w, v));
+  const label = WIDGET_LABELS[c.widget as Widget] ?? c.widget;
+  return row(`Size of ${esc(label)}`,
+    `<span class="muted">Width</span>` + select(`data-k="blockW"`, ws, String(c.w), ws.length < 2) +
+    `<span class="muted">Height</span>` + select(`data-k="blockH"`, hs, String(c.h), hs.length < 2),
+    "Only sizes that fit next to the other blocks");
+}
+
+function resizeBlock(w: number, h: number) {
+  const grid = S.home.grid.map((c, j) => (j === selBlock ? { ...c, w, h } : c));
+  void save({ home: { grid } });
+}
+
+function presetFromSel(): HomePreset | undefined {
+  const i = Number(presetSel.slice(1));
+  return presetSel.startsWith("b") ? BUILTIN_PRESETS[i] : S.home.presets[i];
+}
+
+function applyPreset(p: HomePreset) {
+  selBlock = -1;
+  homeNote = "";
+  void save({ home: { header: p.header, grid: p.grid.map(c => ({ ...c })) } });
+}
+
+function savePreset() {
+  const name = presetName.trim();
+  if (!name) { homeNote = "Give the preset a name first."; render(true); return; }
+  const mine: HomePreset = { name, header: S.home.header, grid: S.home.grid.map(c => ({ ...c })) };
+  const rest = S.home.presets.filter(p => p.name !== name);  // same name replaces
+  const presets = [...rest, mine];
+  presetName = "";
+  presetSel = `u${presets.length - 1}`;
+  homeNote = `Saved "${name}".`;
+  void save({ home: { presets } });
+}
+
+function deletePreset() {
+  const i = Number(presetSel.slice(1));
+  presetSel = "";
+  void save({ home: { presets: S.home.presets.filter((_, j) => j !== i) } });
+}
+
+// Claude Code wiring, fetched when the AI section opens.
+let claude: ClaudeState | null = null;
+let claudeNote = "";
+let claudeLoading = false;
+
+function aiHtml(): string {
+  const a = S.ai;
+  if (!claude && !claudeLoading) {
+    claudeLoading = true;
+    api.claudeStatus()
+      .then(c => { claude = c; claudeNote = ""; })
+      .catch(err => { claude = { statusline: false, hooks: false, cli: false }; claudeNote = String(err); })
+      .finally(() => { claudeLoading = false; render(true); });
+  }
+  const linked = !!claude && claude.statusline && claude.hooks;
+  const usage = card("Usage", "What the board's AI page shows", [
+    row("Agent", select(`data-k="aiAgent"`, [["auto", "Most recently used"], ["claude", "Claude Code"], ["codex", "Codex"]], a.agent)),
+    row("Live limits", tgl(`data-k="aiLive"`, a.live_limits), "Reads the 5-hour and weekly limits from Anthropic. Coming in a later update"),
+  ].join(""));
+  const cc = card("Claude Code", "Limits and waiting alerts come from Claude Code", [
+    row(linked ? "Connected" : "Not connected",
+      `<button type="button" data-act="claude">${icon(linked ? "x" : "zap", 13)}${linked ? "Disconnect" : "Connect"}</button>`,
+      claude && !claude.cli ? "deskhub-cli is missing: reinstall Desk Hub" :
+        "Adds Desk Hub's status line and hooks to Claude Code's settings (a backup is kept)"),
+    ...(claudeNote ? [text(esc(claudeNote))] : []),
+  ].join(""));
+  const alerts = card("Alerts", "Shows on the board when Claude Code waits for you", [
+    row("Waiting alerts", tgl(`data-k="aiAlerts"`, a.alerts)),
+    row("Idle alert after", `<input class="num" type="number" min="0" max="3600" data-k="aiIdle" value="${a.idle_alert_seconds}"> s`,
+      "An idle session alerts after this many seconds"),
+  ].join(""));
+  return usage + cc + alerts;
+}
+
+async function toggleClaude() {
+  const linked = !!claude && claude.statusline && claude.hooks;
+  try {
+    claude = await api.claudeConnect(!linked);
+    claudeNote = "";
+  } catch (err) {
+    claudeNote = String(err);
+  }
+  render(true);
 }
 
 function appearanceHtml(): string {
@@ -325,8 +456,19 @@ async function act(el: HTMLElement) {
     case "page-up": movePage(el.dataset.page as Page, -1); return;
     case "page-down": movePage(el.dataset.page as Page, 1); return;
     case "grid-remove": removeCell(Number(el.dataset.idx)); return;
+    case "grid-select": {
+      const i = Number(el.dataset.idx);
+      selBlock = selBlock === i ? -1 : i;
+      render(true);
+      return;
+    }
+    case "preset-apply": { const p = presetFromSel(); if (p) applyPreset(p); return; }
+    case "preset-delete": deletePreset(); return;
+    case "preset-save": savePreset(); return;
+    case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
     case "step": stepSlider(el.dataset.slider as SliderKey, Number(el.dataset.d)); return;
     case "eye": showToken = !showToken; render(true); return;
+    case "claude": await toggleClaude(); return;
     case "import": await importConfig(); return;
   }
 }
@@ -399,6 +541,36 @@ main.addEventListener("change", e => {
     case "homeHeader":
       void save({ home: { header: on } });
       return;
+    case "homePreset":
+      presetSel = t.value;
+      render(true);
+      return;
+    case "presetName":
+      presetName = t.value;
+      return;
+    case "blockW":
+    case "blockH": {
+      const c = S.home.grid[selBlock];
+      if (c) resizeBlock(k === "blockW" ? Number(t.value) : c.w, k === "blockH" ? Number(t.value) : c.h);
+      return;
+    }
+    case "clockSeconds":
+      void save({ display: { clock_seconds: on } });
+      return;
+    case "aiAgent":
+      void save({ ai: { agent: t.value as Settings["ai"]["agent"] } });
+      return;
+    case "aiLive":
+      void save({ ai: { live_limits: on } });
+      return;
+    case "aiAlerts":
+      void save({ ai: { alerts: on } });
+      return;
+    case "aiIdle": {
+      const v = Math.max(0, Math.min(3600, Math.round(Number(t.value) || 0)));
+      void save({ ai: { idle_alert_seconds: v } });
+      return;
+    }
     case "homeAdd": {
       const w = t.value as Widget;
       if (!w) return;
@@ -415,6 +587,7 @@ nav.addEventListener("click", e => {
   const b = (e.target as HTMLElement).closest<HTMLElement>("[data-sec]");
   if (!b) return;
   section = b.dataset.sec as SectionId;
+  if (section === "ai") claude = null; // re-read Claude Code's settings each visit
   renderNav();
   render(true);
   main.scrollTop = 0;
@@ -443,6 +616,11 @@ async function boot() {
     if (section === "status") render(true);
   });
   await onSettings(s => {
+    // A grid or preset list changed elsewhere: drop selections that may now point at
+    // a different block or preset.
+    if (s.home.grid[selBlock]?.widget !== S.home.grid[selBlock]?.widget) selBlock = -1;
+    if (presetSel.startsWith("u") &&
+        s.home.presets[Number(presetSel.slice(1))]?.name !== S.home.presets[Number(presetSel.slice(1))]?.name) presetSel = "";
     S = s;
     applyTheme();
     render();

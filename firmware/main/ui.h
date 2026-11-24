@@ -36,6 +36,7 @@ void ui_set_net(const hub_net_t *n);
 void ui_set_github(const hub_github_t *g);
 // Navigation bar position: 0 left, 1 right, 2 bottom. Saved to NVS; restarts the board on change.
 void ui_set_nav(int nav);
+void ui_set_clock_seconds(bool on);  // Home clock shows seconds
 // Screensaver (a drifting clock) shown while the PC's display is asleep. A tap hides it.
 void ui_saver_show(bool on);
 bool ui_saver_shown(void);

@@ -37,10 +37,18 @@ type Settings = {
     night: string;               // "" (off) or "HH:MM-HH:MM"
     night_style: "off" | "clock";
     pc_sleep: "off" | "clock" | "none";
+    clock_seconds: boolean;      // Home clock shows seconds (layout key "seconds")
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };   // order = navigation order
-  home: { header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
+  home: {
+    presets: { name: string; header: boolean; grid: GridCell[] }[];  // user-saved layouts header: boolean; grid: { widget: string; x: number; y: number; w: number; h: number }[] };
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };   // default midnight
+  ai: {
+    agent: "auto" | "claude" | "codex";   // auto = most recently used
+    live_limits: boolean;        // opt-in Anthropic usage endpoint, default false
+    alerts: boolean;             // "Claude is waiting" alerts, default true
+    idle_alert_seconds: number;  // default 30
+  };
   imported: boolean;             // config.toml already imported once
 };
 
@@ -54,3 +62,14 @@ type Status = {
 ```
 
 Pages known to the board: home, stats, ai, calendar, weather, media, printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
+
+## deskhub-cli sidecar
+
+The installer ships `deskhub-cli.exe` next to the app (`bundle.externalBin`). Before
+`npx tauri dev` or a local `npx tauri build`, build it and copy it with the target triple:
+
+```powershell
+cargo build --release -p deskhub-cli
+New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
+Copy-Item target/release/deskhub-cli.exe src-tauri/binaries/deskhub-cli-x86_64-pc-windows-msvc.exe
+```

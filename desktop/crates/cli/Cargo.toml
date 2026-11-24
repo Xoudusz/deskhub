@@ -1,0 +1,17 @@
+[package]
+name = "deskhub-cli"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Claude Code status line and hook bridge for Desk Hub"
+
+[[bin]]
+name = "deskhub-cli"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+
+# Ancestor PIDs for hook sessions (the companion matches them to windows).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
