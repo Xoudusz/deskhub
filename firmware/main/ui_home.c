@@ -111,6 +111,7 @@ typedef struct {
     int digit_top;  // line top -> top of the digits
     int digit_h;
     int height;     // widget height: digits + gap + date
+    int y0;         // top of the digits in the widget: centres digits + date in a taller block
     bool narrow;    // AM/PM moves to the date line
 } clock_geo_t;
 
@@ -136,8 +137,14 @@ void ui_set_clock_seconds(bool on)
     s_seconds = on;
 }
 
+// The largest clock size, lowered to 128 px if a bigger font can't be created.
+static int s_clock_px_max = 240;
+
 // Geometry from the 128 px font's metrics, scaled linearly (no font is created here).
-// max_h > 0: also shrink the digits so the clock and its date fit that height (grid cells).
+// max_h > 0: shrink the digits so the clock and its date fit that height (grid cells).
+// A block taller than the natural height (a grid block): the digits grow to fill it, up to
+// the width, and the group is centred vertically. A flow column passes the natural height,
+// so it keeps the natural size.
 static clock_geo_t clock_geo(int w, int max_h)
 {
     clock_geo_t g;
@@ -152,17 +159,31 @@ static clock_geo_t clock_geo(int w, int max_h)
     if (g.px > 170) g.px = 170;
     lv_font_glyph_dsc_t d;
     lv_font_get_glyph_dsc(f, &d, '0', 0);
+    bool centre = false;   // only in a block taller than the natural height (not in a flow column)
     if (max_h > 0 && d.box_h > 0) {
         int room = max_h - CLOCK_DATE_GAP - CLOCK_DATE_H;   // left for the digits
         int fit = room * CLOCK_PX / d.box_h;
-        if (fit < g.px) g.px = fit < 24 ? 24 : fit;
+        int natural_h = d.box_h * g.px / CLOCK_PX + CLOCK_DATE_GAP + CLOCK_DATE_H;
+        if (fit < g.px) {
+            g.px = fit < 24 ? 24 : fit;
+        } else if (max_h > natural_h) {
+            centre = true;
+            // 24 h mode needs no room for AM/PM beside the clock.
+            int wide = g.narrow || hubcfg()->h24 ? w : w - 64;
+            int grow = tw > 0 ? CLOCK_PX * wide / tw : CLOCK_PX;
+            if (grow > fit) grow = fit;
+            if (grow > s_clock_px_max) grow = s_clock_px_max;
+            if (grow > g.px) g.px = grow;
+        }
     }
+    if (g.px > s_clock_px_max) g.px = s_clock_px_max;
     int ascent = f->line_height - f->base_line;
     g.cell = cell * g.px / CLOCK_PX;
     g.colon = colon * g.px / CLOCK_PX;
     g.digit_top = (ascent - (d.box_h + d.ofs_y)) * g.px / CLOCK_PX;
     g.digit_h = d.box_h * g.px / CLOCK_PX;
     g.height = g.digit_h + CLOCK_DATE_GAP + CLOCK_DATE_H;
+    g.y0 = centre && max_h > g.height ? (max_h - g.height) / 2 : 0;
     return g;
 }
 
@@ -211,7 +232,7 @@ static void set_clock_text(const clock_geo_t *g)
     }
     for (; i < CLOCK_CELLS; i++) lv_obj_add_flag(s_cell[i], LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_size(s_clock_box, x, LV_SIZE_CONTENT);
-    if (!g->narrow) lv_obj_set_pos(s_ampm, x + 8, g->digit_h - 28);
+    if (!g->narrow) lv_obj_set_pos(s_ampm, x + 8, g->y0 + g->digit_h - 28);
 }
 
 static void layout_clock(int w, int h)
@@ -220,17 +241,23 @@ static void layout_clock(int w, int h)
     s_clock_narrow = g.narrow;
     lv_font_t *old = NULL;
     lv_font_t *font = ui_clock_font(g.px, &old);
+    if (font == g_font_clock && g.px > CLOCK_PX) {
+        // No memory for a bigger font: stay at 128 px from now on (the tick path too).
+        s_clock_px_max = CLOCK_PX;
+        g = clock_geo(w, h);
+    }
     // A failed font creation falls back to the 128 px font: shrink the cells to match.
     if (font == g_font_clock && g.px != CLOCK_PX) g.px = CLOCK_PX;
     for (int i = 0; i < CLOCK_CELLS; i++) lv_obj_set_style_text_font(s_cell[i], font, 0);
     if (old) lv_tiny_ttf_destroy(old);  // no label uses it any more
     s_clock_font = font;
-    // Top of the digits at the top of the widget.
-    lv_obj_set_pos(s_clock_box, 0, -g.digit_top);
+    // Top of the digits at y0 (the top of the widget, or lower to centre in a taller block).
+    lv_obj_set_pos(s_clock_box, 0, g.y0 - g.digit_top);
     set_clock_text(&g);
     // Wide: AM/PM beside the clock. Narrow: update_date puts it at the right end of the date line.
     if (!g.narrow) lv_obj_remove_flag(s_ampm, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(s_date, 0, g.digit_h + CLOCK_DATE_GAP);
+    if (hubcfg()->h24) lv_label_set_text(s_ampm, "");
+    lv_obj_set_pos(s_date, 0, g.y0 + g.digit_h + CLOCK_DATE_GAP);
     lv_obj_set_width(s_date, w);
 }
 
