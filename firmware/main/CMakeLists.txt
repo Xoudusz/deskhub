@@ -14,7 +14,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     EMBED_FILES "fonts/MaterialIcons-Regular.ttf" "fonts/Inter-Medium.ttf" "fonts/Inter-SemiBold.ttf"
     REQUIRES esp_lcd esp_driver_i2c esp_driver_gpio esp_wifi esp_netif esp_event nvs_flash
-             esp_http_server esp_http_client esp-tls json esp_timer app_update esp_app_format
+             esp_http_server esp_http_client esp-tls json esp_timer app_update esp_app_format bootloader_support
              ${board_requires}
 )
 

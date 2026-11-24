@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bootloader_random.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_rom_crc.h"
@@ -100,13 +101,20 @@ static bool nvs_has(nvs_handle_t h, const char *key)
 }
 
 // A new random token for a board that has none (a release image set up on its Wi-Fi screen).
-// 16 characters from 32 easy-to-type ones (no 0/o, 1/l): 80 bits.
+// 16 characters from 32 easy-to-type ones (no 0/o, 1/l): 80 bits. This runs at boot, before
+// any radio is on, so the hardware entropy source is switched on for it: without it
+// esp_random() is only a pseudo-random sequence.
 static void make_token(char *out, size_t n)
 {
     static const char ABC[] = "abcdefghijkmnpqrstuvwxyz23456789";
     size_t len = n - 1 < 16 ? n - 1 : 16;
-    for (size_t i = 0; i < len; i++) out[i] = ABC[esp_random() % 32];
+    uint8_t rnd[16];
+    bootloader_random_enable();
+    esp_fill_random(rnd, sizeof(rnd));
+    bootloader_random_disable();
+    for (size_t i = 0; i < len; i++) out[i] = ABC[rnd[i] % 32];   // 256 % 32 == 0: no bias
     out[len] = 0;
+    memset(rnd, 0, sizeof(rnd));
 }
 
 void hubcfg_load(void)
