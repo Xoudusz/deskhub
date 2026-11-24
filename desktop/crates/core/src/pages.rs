@@ -10,17 +10,47 @@ use crate::settings::{GridItem, Settings};
 
 /// Every page the board knows, pages.py ALL_PAGES.
 pub const ALL_PAGES: &[&str] = &[
-    "home", "stats", "ai", "calendar", "weather", "media", "printer", "shortcuts", "timer", "games", "network", "github",
+    "home",
+    "stats",
+    "ai",
+    "calendar",
+    "weather",
+    "media",
+    "printer",
+    "shortcuts",
+    "timer",
+    "games",
+    "network",
+    "github",
 ];
 
 /// Navigation order, pages.py DEFAULT_ORDER (Shortcuts last).
 pub const DEFAULT_ORDER: &[&str] = &[
-    "home", "stats", "ai", "calendar", "weather", "media", "printer", "timer", "games", "network", "github", "shortcuts",
+    "home",
+    "stats",
+    "ai",
+    "calendar",
+    "weather",
+    "media",
+    "printer",
+    "timer",
+    "games",
+    "network",
+    "github",
+    "shortcuts",
 ];
 
 /// Pages on with no [pages] list and no printer, games or github config.
 pub const DEFAULT_PAGES: &[&str] = &[
-    "home", "stats", "ai", "calendar", "weather", "media", "timer", "network", "shortcuts",
+    "home",
+    "stats",
+    "ai",
+    "calendar",
+    "weather",
+    "media",
+    "timer",
+    "network",
+    "shortcuts",
 ];
 
 pub const GRID_COLS: i64 = 5;
@@ -49,7 +79,10 @@ pub const DEFAULT_RIGHT: &[&str] = &["weather", "media", "stats"];
 pub const DEFAULT_RIGHT_WITH_PRINTER: &[&str] = &["weather", "media", "printer"];
 
 fn sizes(name: &str) -> Option<(Range, Range)> {
-    HOME_SIZES.iter().find(|(n, _, _)| *n == name).map(|(_, w, h)| (*w, *h))
+    HOME_SIZES
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, w, h)| (*w, *h))
 }
 
 pub fn is_home_widget(name: &str) -> bool {
@@ -58,7 +91,9 @@ pub fn is_home_widget(name: &str) -> bool {
 
 /// Sizes a widget supports, like ["2x1", "3x1"].
 pub fn widget_sizes(name: &str) -> Vec<String> {
-    let Some((ws, hs)) = sizes(name) else { return Vec::new() };
+    let Some((ws, hs)) = sizes(name) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for h in hs.0..=hs.1 {
         for w in ws.0..=ws.1 {
@@ -230,12 +265,24 @@ pub fn columns_to_grid(left: &[String], right: &[String]) -> Vec<GridItem> {
             if y >= GRID_ROWS {
                 break;
             }
-            let Some((ws, hs)) = sizes(name) else { continue };
+            let Some((ws, hs)) = sizes(name) else {
+                continue;
+            };
             let rest = GRID_ROWS - y;
-            let h = if name == "events" && i == col.len() - 1 { rest } else { 1 };
+            let h = if name == "events" && i == col.len() - 1 {
+                rest
+            } else {
+                1
+            };
             let h = h.min(hs.1);
             if (ws.0..=ws.1).contains(&w) {
-                grid.push(GridItem { widget: name.clone(), x, y, w, h });
+                grid.push(GridItem {
+                    widget: name.clone(),
+                    x,
+                    y,
+                    w,
+                    h,
+                });
             }
             y += h;
         }
@@ -248,8 +295,16 @@ pub fn home_message(s: &Settings) -> Value {
     let grid = validate_grid(&s.home.grid);
     let mut by_row: Vec<&GridItem> = grid.iter().collect();
     by_row.sort_by_key(|g| g.y);
-    let left: Vec<&str> = by_row.iter().filter(|g| g.x < 3).map(|g| g.widget.as_str()).collect();
-    let right: Vec<&str> = by_row.iter().filter(|g| g.x >= 3).map(|g| g.widget.as_str()).collect();
+    let left: Vec<&str> = by_row
+        .iter()
+        .filter(|g| g.x < 3)
+        .map(|g| g.widget.as_str())
+        .collect();
+    let right: Vec<&str> = by_row
+        .iter()
+        .filter(|g| g.x >= 3)
+        .map(|g| g.widget.as_str())
+        .collect();
     let grid_json: Vec<Value> = grid
         .iter()
         .map(|g| json!({"widget": g.widget, "x": g.x, "y": g.y, "w": g.w, "h": g.h}))
@@ -269,7 +324,13 @@ mod tests {
     use crate::settings::{Nav, NightStyle, PcSleep};
 
     fn item(widget: &str, x: i64, y: i64, w: i64, h: i64) -> GridItem {
-        GridItem { widget: widget.into(), x, y, w, h }
+        GridItem {
+            widget: widget.into(),
+            x,
+            y,
+            w,
+            h,
+        }
     }
 
     #[test]
@@ -371,8 +432,15 @@ mod tests {
         assert!(problems[2].contains("runs off"));
         assert!(problems[3].contains("overlaps weather"));
 
-        let good = validate_grid(&[item("weather", 0, 0, 2, 1), item("weather", 0, 0, 1, 1), item("media", 2, 0, 2, 1)]);
-        assert_eq!(good, vec![item("weather", 0, 0, 2, 1), item("media", 2, 0, 2, 1)]);
+        let good = validate_grid(&[
+            item("weather", 0, 0, 2, 1),
+            item("weather", 0, 0, 1, 1),
+            item("media", 2, 0, 2, 1),
+        ]);
+        assert_eq!(
+            good,
+            vec![item("weather", 0, 0, 2, 1), item("media", 2, 0, 2, 1)]
+        );
     }
 
     #[test]
@@ -383,13 +451,21 @@ mod tests {
         assert_eq!(v["header"], true);
         assert_eq!(v["left"], json!(["claude", "events"]));
         assert_eq!(v["right"], json!(["weather", "media", "stats"]));
-        assert_eq!(v["grid"][1], json!({"widget": "events", "x": 0, "y": 1, "w": 3, "h": 2}));
+        assert_eq!(
+            v["grid"][1],
+            json!({"widget": "events", "x": 0, "y": 1, "w": 3, "h": 2})
+        );
     }
 
     #[test]
     fn columns_with_printer_and_full_height_events() {
         let left = vec!["events".to_string()];
-        let right = vec!["weather".to_string(), "printer".to_string(), "media".to_string(), "stats".to_string()];
+        let right = vec![
+            "weather".to_string(),
+            "printer".to_string(),
+            "media".to_string(),
+            "stats".to_string(),
+        ];
         let g = columns_to_grid(&left, &right);
         assert_eq!(
             g,

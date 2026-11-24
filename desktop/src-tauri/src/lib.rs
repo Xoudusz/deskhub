@@ -217,8 +217,11 @@ pub fn run() {
             }
 
             let (service, status) = if claim_companion_mutex() {
-                let svc =
-                    tauri::async_runtime::block_on(async { Service::start(settings.clone()) });
+                let svc = tauri::async_runtime::block_on(async {
+                    let svc = Service::start(settings.clone());
+                    deskhub_core::collectors::start_all(&svc);
+                    svc
+                });
                 let status = svc.status().borrow().clone();
                 (Some(svc), status)
             } else {
