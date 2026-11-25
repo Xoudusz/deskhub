@@ -8,6 +8,7 @@
 #include "nvs_flash.h"
 #include "ota.h"
 #include "ui.h"
+#include "usb_setup.h"
 #include "weather.h"
 
 void app_main(void)
@@ -31,6 +32,7 @@ void app_main(void)
     display_unlock();
 
     hub_server_start();
+    usb_setup_start();   // Wi-Fi and token from the desktop app over the cable
     ota_mark_valid();   // got this far: keep this firmware (no rollback)
     weather_start();
     ESP_LOGI("main", "free internal %u, psram %u",

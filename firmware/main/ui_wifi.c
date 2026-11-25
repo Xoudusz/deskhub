@@ -462,7 +462,7 @@ static void build(void)
     lv_obj_set_style_margin_top(cap, 10, 0);
     s_token = ui_label(left, g_font_24, COL_ACCENT, "");
     lv_obj_set_width(s_token, LV_PCT(100));
-    lv_obj_t *hint = ui_label(left, g_font_14, COL_MUTED, "Type it into the Desk Hub app: Connection, Board.");
+    lv_obj_t *hint = ui_label(left, g_font_14, COL_MUTED, "In the Desk Hub app: Connection, Board, Pair. Or type it there.");
     lv_obj_set_width(hint, LV_PCT(100));
     cap = ui_caption(left, "SAVED");
     lv_obj_set_style_margin_top(cap, 10, 0);
@@ -498,7 +498,13 @@ void ui_wifi_show(void)
     if (!s_root) build();
     if (ui_saver_shown()) ui_saver_show(false);
     join_close();
-    lv_label_set_text(s_token, hubcfg()->token[0] ? hubcfg()->token : "-");
+    const char *tok = hubcfg()->token;
+    char grouped[24];
+    if (strlen(tok) == 16 && !strchr(tok, '-')) {   // a board-made token: in fours, easier to type
+        snprintf(grouped, sizeof(grouped), "%.4s-%.4s-%.4s-%.4s", tok, tok + 4, tok + 8, tok + 12);
+        tok = grouped;
+    }
+    lv_label_set_text(s_token, tok[0] ? tok : "-");
     rebuild_saved();
     s_gen = UINT32_MAX;   // redraw the list
     refresh_status(true);

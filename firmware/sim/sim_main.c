@@ -90,6 +90,9 @@ EMSCRIPTEN_KEEPALIVE void sim_pointer(int x, int y, int down)
     s_down = down != 0;
 }
 
+// Shows the pairing prompt, as a POST /pair would.
+EMSCRIPTEN_KEEPALIVE void sim_pair(const char *name) { ui_pair_show(name, "4821", "192.168.68.20"); }
+
 // Shows the Home page (the app's Home builder previews it).
 EMSCRIPTEN_KEEPALIVE void sim_show_home(void) { ui_show_page(PAGE_HOME); }
 

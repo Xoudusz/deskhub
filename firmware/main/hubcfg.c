@@ -179,9 +179,23 @@ const hub_cfg_t *hubcfg(void)
     return &s_cfg;
 }
 
+// Equal when the dashes are left out: the Wi-Fi screen shows a token as "abcd-efgh-...",
+// so it works typed with or without them.
+static bool same_without_dashes(const char *a, const char *b)
+{
+    for (;;) {
+        while (*a == '-') a++;
+        while (*b == '-') b++;
+        if (*a != *b) return false;
+        if (!*a) return true;
+        a++;
+        b++;
+    }
+}
+
 bool hubcfg_token_ok(const char *token)
 {
-    return token && token[0] && s_cfg.token[0] && strcmp(token, s_cfg.token) == 0;
+    return token && token[0] && s_cfg.token[0] && same_without_dashes(token, s_cfg.token);
 }
 
 const char *hubcfg_variant(void)

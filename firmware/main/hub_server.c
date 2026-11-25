@@ -20,6 +20,7 @@
 #include "hubcfg.h"
 #include "net.h"
 #include "ota.h"
+#include "pair.h"
 #include "sdkconfig.h"
 #include "ui.h"
 
@@ -337,5 +338,6 @@ void hub_server_start(void)
     static const httpd_uri_t perf = {.uri = "/perf", .method = HTTP_GET, .handler = perf_handler};
     httpd_register_uri_handler(s_server, &perf);
     ota_register(s_server);
+    pair_register(s_server);
     ESP_LOGI(TAG, "listening on :80");
 }

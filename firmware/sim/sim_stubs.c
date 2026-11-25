@@ -146,6 +146,14 @@ void ota_register(httpd_handle_t server) { (void)server; }
 void ota_answer(bool allow) { (void)allow; }
 void ota_mark_valid(void) {}
 
+// ---- pair: the prompt only (sim_main.c's sim_pair shows it) ------------------------------
+void ui_pair_hide(void);
+void pair_answer(bool allow)
+{
+    printf("I pair: %s\n", allow ? "allowed" : "denied");
+    ui_pair_hide();
+}
+
 // ---- NVS: values in globalThis.__deskhubSimNvs, keyed "namespace/key" ----------
 static char s_ns[8][16];
 static int s_ns_count;

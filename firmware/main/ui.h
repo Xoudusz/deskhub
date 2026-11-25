@@ -57,3 +57,7 @@ void ui_update_hide(void);
 // network is saved (main.c), and from the Wi-Fi icon.
 void ui_wifi_show(void);
 bool ui_wifi_shown(void);
+// Pairing prompt "Pair with <name>?" with the app's code and the asking address
+// (Deny / Allow, answered through pair_answer).
+void ui_pair_show(const char *name, const char *code, const char *ip);
+void ui_pair_hide(void);
