@@ -28,8 +28,29 @@ pub struct Settings {
     /// Steam, built-in game presets and your own games (config.toml [steam],
     /// [game_presets], [[games]]).
     pub games: Games,
+    /// Plex server ("Sign in with Plex"); its token lives in the credential store.
+    pub media_server: MediaServer,
     /// config.toml was imported once.
     pub imported: bool,
+}
+
+/// The Plex server shown beside the PC on the Media page. `signed_in` means the plex.tv token
+/// is in the credential store ("Desk Hub" / "plex-token"); `server_id` is the server's
+/// clientIdentifier from plex.tv. `client_id` names this install to Plex (X-Plex-Client-Identifier).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MediaServer {
+    pub signed_in: bool,
+    pub server_id: String,
+    pub server_name: String,
+    pub client_id: String,
+}
+
+impl MediaServer {
+    /// Signed in with a server chosen: the collector has something to poll.
+    pub fn ready(&self) -> bool {
+        self.signed_in && !self.server_id.is_empty() && !self.client_id.is_empty()
+    }
 }
 
 impl Default for Settings {
@@ -44,6 +65,7 @@ impl Default for Settings {
             ai: Ai::default(),
             tiles: default_tiles(),
             games: Games::default(),
+            media_server: MediaServer::default(),
             imported: false,
         }
     }
@@ -938,6 +960,7 @@ mod tests {
                 "home",
                 "imported",
                 "location",
+                "media_server",
                 "pages",
                 "tiles"
             ]
@@ -1109,6 +1132,22 @@ mod tests {
     #[test]
     fn invalid_toml_is_an_error() {
         assert!(import_config_toml("[hub\nhost =").is_err());
+    }
+
+    #[test]
+    fn media_server_defaults_patches_and_old_files() {
+        let s = Settings::default();
+        assert!(!s.media_server.ready());
+        // settings.json from before Plex: the section defaults.
+        let old: Settings = serde_json::from_value(json!({"imported": true})).unwrap();
+        assert_eq!(old.media_server, MediaServer::default());
+
+        let mut s = Settings::default();
+        s.media_server.client_id = "deskhub-1".into();
+        s.merge_patch(json!({"media_server": {"signed_in": true, "server_id": "abc", "server_name": "Home"}}));
+        assert!(s.media_server.ready());
+        assert_eq!(s.media_server.server_name, "Home");
+        assert_eq!(s.media_server.client_id, "deskhub-1");
     }
 
     #[test]

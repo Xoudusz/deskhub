@@ -10,6 +10,8 @@ use crate::settings::Settings;
 pub trait SecretStore: Send + Sync {
     fn get(&self) -> Result<Option<String>>;
     fn set(&self, value: &str) -> Result<()>;
+    /// Removes the secret; a missing one is not an error.
+    fn delete(&self) -> Result<()>;
 }
 
 /// No credential store: the settings file keeps the token.
@@ -22,41 +24,72 @@ impl SecretStore for NoStore {
     fn set(&self, _: &str) -> Result<()> {
         anyhow::bail!("no credential store on this platform")
     }
+    fn delete(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Credential names under the "Desk Hub" service.
+pub const BOARD_TOKEN: &str = "board-token";
+/// The plex.tv account token from "Sign in with Plex".
+pub const PLEX_TOKEN: &str = "plex-token";
+
+#[cfg(windows)]
+pub struct CredentialManager {
+    pub user: &'static str,
 }
 
 #[cfg(windows)]
-pub struct CredentialManager;
-
-#[cfg(windows)]
 impl CredentialManager {
-    fn entry() -> Result<keyring::Entry> {
-        Ok(keyring::Entry::new("Desk Hub", "board-token")?)
+    fn entry(&self) -> Result<keyring::Entry> {
+        Ok(keyring::Entry::new("Desk Hub", self.user)?)
     }
 }
 
 #[cfg(windows)]
 impl SecretStore for CredentialManager {
     fn get(&self) -> Result<Option<String>> {
-        match Self::entry()?.get_password() {
+        match self.entry()?.get_password() {
             Ok(v) => Ok(Some(v)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
     fn set(&self, value: &str) -> Result<()> {
-        Ok(Self::entry()?.set_password(value)?)
+        Ok(self.entry()?.set_password(value)?)
+    }
+    fn delete(&self) -> Result<()> {
+        match self.entry()?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
-/// The platform's store: Credential Manager on Windows, none elsewhere.
+/// The platform's store for the board token: Credential Manager on Windows, none elsewhere.
 pub fn system_store() -> Box<dyn SecretStore> {
+    system_store_for(BOARD_TOKEN)
+}
+
+/// The platform's store for one named secret.
+pub fn system_store_for(user: &'static str) -> Box<dyn SecretStore> {
     #[cfg(windows)]
     {
-        Box::new(CredentialManager)
+        Box::new(CredentialManager { user })
     }
     #[cfg(not(windows))]
     {
+        let _ = user;
         Box::new(NoStore)
+    }
+}
+
+/// Stores a secret and reads it back: only a confirmed write counts.
+pub fn store_verified(store: &dyn SecretStore, value: &str) -> Result<()> {
+    store.set(value)?;
+    match store.get()? {
+        Some(v) if v == value => Ok(()),
+        _ => anyhow::bail!("the credential store did not keep the value"),
     }
 }
 
@@ -107,6 +140,10 @@ mod tests {
             *self.0.lock().unwrap() = Some(v.to_string());
             Ok(())
         }
+        fn delete(&self) -> Result<()> {
+            *self.0.lock().unwrap() = None;
+            Ok(())
+        }
     }
 
     /// Writes are lost: set succeeds but nothing reads back.
@@ -118,6 +155,20 @@ mod tests {
         fn set(&self, _: &str) -> Result<()> {
             Ok(())
         }
+        fn delete(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn store_verified_needs_the_read_back() {
+        let store = Mem::default();
+        store_verified(&store, "plex").unwrap();
+        assert_eq!(store.get().unwrap().as_deref(), Some("plex"));
+        assert!(store_verified(&Leaky, "plex").is_err());
+        assert!(store_verified(&NoStore, "plex").is_err());
+        store.delete().unwrap();
+        assert_eq!(store.get().unwrap(), None);
     }
 
     fn with_token(t: &str) -> Settings {

@@ -174,8 +174,13 @@ pub fn rgb_to_rgb565_le(rgb: &[u8]) -> Vec<u8> {
 
 /// ART1 frame: "ART1" | u32 art_id | u16 w | u16 h | RGB565 pixels (all little endian).
 pub fn art_frame(art_id: u32, w: u16, h: u16, rgb565: &[u8]) -> Vec<u8> {
+    art_frame_magic(b"ART1", art_id, w, h, rgb565)
+}
+
+/// The same frame with another magic ("ARS1" = the Plex poster).
+pub fn art_frame_magic(magic: &[u8; 4], art_id: u32, w: u16, h: u16, rgb565: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(12 + rgb565.len());
-    out.extend_from_slice(b"ART1");
+    out.extend_from_slice(magic);
     out.extend_from_slice(&art_id.to_le_bytes());
     out.extend_from_slice(&w.to_le_bytes());
     out.extend_from_slice(&h.to_le_bytes());

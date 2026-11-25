@@ -33,6 +33,11 @@ Commands (`invoke`):
 | `usb_wifi` | `{ port: string, ssid: string, pass: string }` | `{ ip, host }`: the board joined and saved the network (saves `<host>.local`); errors name the cause, never the password |
 | `board_pair_code` | – | `string`: a random 4-digit code |
 | `board_pair` | `{ code: string }` | `null`: `POST /pair` to the board with the computer name and code; saves the token on Allow, explains Deny / no answer / cooldown / old firmware |
+| `plex_sign_in` | – | `string`: the plex.tv sign-in page (opened in the browser; shown in case none opened). Starts a PIN (`POST plex.tv/api/v2/pins?strong=true`) and polls it every 2 s for up to 5 min; the result arrives as `plex-sign-in`. On approval the account token goes to Credential Manager ("Desk Hub" / "plex-token", read back to confirm) and a single server on the account is picked |
+| `plex_sign_in_cancel` | – | `null`: stops waiting |
+| `plex_servers` | – | `{ id, name, owned }[]`: Plex Media Servers on the signed-in account (plex.tv `/resources`) |
+| `plex_select_server` | `{ id: string, name: string }` | `null`: saves `media_server.server_id` / `server_name` |
+| `plex_sign_out` | – | `null`: deletes the token and forgets the server |
 | `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):
@@ -41,6 +46,7 @@ Events (`listen`):
 - `settings`: `Settings`, sent after any change.
 - `sim-frame`: `SimFrame`, every frame published for the board (and layout/home when settings change them).
 - `sim-resync`: frames were missed; call `sim_state` again.
+- `plex-sign-in`: `{ state: "done" | "error" | "expired", message: string }`, the end of a `plex_sign_in`.
 
 ```ts
 type Settings = {
@@ -77,6 +83,12 @@ type Settings = {
   };
   location: { enabled: boolean; city: string; lat: string; lon: string; tz: string; fahrenheit: boolean; h24: boolean };
                                  // sent to the board ("location") only once enabled; until then the UI shows the board's values
+  media_server: {                // Plex "now playing" (collectors/plex.rs); kept across import_config
+    signed_in: boolean;          // the plex.tv token is in Credential Manager ("Desk Hub" / "plex-token")
+    server_id: string;           // plex.tv clientIdentifier of the chosen server
+    server_name: string;
+    client_id: string;           // X-Plex-Client-Identifier, made once per install
+  };
   imported: boolean;             // config.toml already imported once
 };
 
@@ -94,6 +106,13 @@ type Status = {
 The board token lives in Windows Credential Manager ("Desk Hub" / "board-token", `crates/core/src/secrets.rs`);
 `settings.json` keeps it blank once the store holds it. `get_settings` still returns it.
 ```
+
+The Plex collector asks plex.tv for the server's addresses and connects to its local HTTPS
+`*.plex.direct` address, pinned to the LAN IP (no DNS lookup, so DNS-rebind protection doesn't
+matter); without one, plain HTTP on the LAN IP. It polls `/status/sessions` every 3 s while
+anything plays (15 s idle, 60 s after a failure) and sends `media_server` JSON plus an `ARS1`
+poster (128x192, letterboxed). Everyone on the server counts; one session shows, playing first
+and sticky, with "(+N more)". Read-only: no seek or play/pause.
 
 Pages known to the board: home, stats, ai, calendar, weather, media, printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
 

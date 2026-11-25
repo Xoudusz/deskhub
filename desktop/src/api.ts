@@ -29,8 +29,14 @@ export type Settings = {
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
+  media_server: MediaServer;
   imported: boolean;
 };
+
+/** "Sign in with Plex" state; the account token itself stays in the credential store. */
+export type MediaServer = { signed_in: boolean; server_id: string; server_name: string; client_id: string };
+export type PlexServer = { id: string; name: string; owned: boolean };
+export type PlexOutcome = { state: "done" | "error" | "expired"; message: string };
 
 /** The board's city, coordinates (decimal strings), POSIX time zone and units. */
 export type Location = { enabled: boolean; city: string; lat: string; lon: string; tz: string; fahrenheit: boolean; h24: boolean };
@@ -194,6 +200,7 @@ const mock: Settings = {
   ],
   games: { steam: true, presets: true, presets_disabled: [], custom: [] },
   location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },
+  media_server: { signed_in: false, server_id: "", server_name: "", client_id: "deskhub-mock" },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
@@ -202,6 +209,7 @@ const subs = {
   status: new Set<(s: Status) => void>(),
   settings: new Set<(s: Settings) => void>(),
   sim: new Set<(f: SimFrame) => void>(),
+  plex: new Set<(o: PlexOutcome) => void>(),
 };
 
 /** One frame for the simulator, as the board would get it: JSON, or a binary frame in base64. */
@@ -219,6 +227,7 @@ function mockSimFrames(): SimFrame[] {
     mockHomeFrame(),
     { json: { type: "stats", cpu: 14, cpu_temp: 52, gpu: 31, gpu_temp: 48, ram_used: 11.2, ram_total: 32, vram_used: 3.1, vram_total: 16, net_down: 120000, net_up: 9000, disk: 61, cpu_name: "Ryzen 7 7800X3D", gpu_name: "Radeon RX 7900 XT" } },
     { json: { type: "media", active: true, playing: true, title: "Midnight City", artist: "M83", album: "Hurry Up, We're Dreaming", source: "Spotify", pos: 95, dur: 243, can_seek: true, art_id: 0 } },
+    { json: { type: "media_server", configured: true, name: "Home", kind: "plex", online: true, version: "Plex Media Server 1.41.2", library: "312 movies, 45 shows, 2,104 episodes", streams: 2, transcoding: 0, active: true, playing: true, title: "Pilot", artist: "Show - S1 E2", album: "Living Room TV - alex (+1 more)", source: "Home", pos: 61, dur: 1800, can_seek: false, controls: false, art_id: 0 } },
     { json: { type: "ai", provider: "claude", limits: { five_hour: { pct: 42, reset: Math.floor(Date.now() / 1000) + 5400 }, updated: Math.floor(Date.now() / 1000) }, block: { active: true, tokens: 182000, messages: 23 }, today: { tokens: 640000, output: 52000, messages: 88 }, days: [12, 30, 22, 41, 18, 9, 33], last_active: Math.floor(Date.now() / 1000) } },
   ];
 }
@@ -347,6 +356,27 @@ export const api = {
     TAURI ? invoke<ClaudeState>("claude_status") : Promise.resolve({ statusline: false, hooks: false, cli: true }),
   claudeConnect: (on: boolean): Promise<ClaudeState> =>
     TAURI ? invoke<ClaudeState>("claude_connect", { on }) : Promise.resolve({ statusline: on, hooks: on, cli: true }),
+  /** Opens the Plex sign-in page; resolves with its address. The result comes via onPlex. */
+  plexSignIn: async (): Promise<string> => {
+    if (TAURI) return invoke<string>("plex_sign_in");
+    setTimeout(() => {
+      mockMerge({ media_server: { signed_in: true, server_id: "", server_name: "" } });
+      subs.plex.forEach(cb => cb({ state: "done", message: "" }));
+    }, 2000);
+    return "https://app.plex.tv/auth#?clientID=deskhub-mock&code=mock";
+  },
+  plexSignInCancel: (): Promise<void> => (TAURI ? invoke<void>("plex_sign_in_cancel") : Promise.resolve()),
+  plexServers: (): Promise<PlexServer[]> =>
+    TAURI ? invoke<PlexServer[]>("plex_servers")
+      : Promise.resolve([{ id: "srv1", name: "Home", owned: true }, { id: "srv2", name: "Friend's server", owned: false }]),
+  plexSelectServer: async (id: string, name: string): Promise<void> => {
+    if (TAURI) return invoke<void>("plex_select_server", { id, name });
+    mockMerge({ media_server: { server_id: id, server_name: name } });
+  },
+  plexSignOut: async (): Promise<void> => {
+    if (TAURI) return invoke<void>("plex_sign_out");
+    mockMerge({ media_server: { signed_in: false, server_id: "", server_name: "" } });
+  },
   importConfig: (path?: string): Promise<Settings> => {
     if (TAURI) return invoke<Settings>("import_config", { path });
     mock.imported = true;
@@ -358,6 +388,11 @@ export const api = {
 export async function onStatus(cb: (s: Status) => void): Promise<void> {
   if (TAURI) await listen<Status>("status", e => cb(e.payload));
   else subs.status.add(cb);
+}
+
+export async function onPlex(cb: (o: PlexOutcome) => void): Promise<void> {
+  if (TAURI) await listen<PlexOutcome>("plex-sign-in", e => cb(e.payload));
+  else subs.plex.add(cb);
 }
 
 export async function onSettings(cb: (s: Settings) => void): Promise<void> {

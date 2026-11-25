@@ -13,6 +13,7 @@ pub mod ai;
 pub mod alerts;
 pub mod location;
 pub mod media;
+pub mod plex;
 pub mod power;
 pub mod shortcuts;
 pub mod stats;
@@ -47,4 +48,5 @@ pub fn start_all(handle: &ServiceHandle) {
     tokio::spawn(steam::run(Ctx::new(handle)));
     tokio::spawn(theme::run(Ctx::new(handle)));
     tokio::spawn(location::run(Ctx::new(handle)));
+    tokio::spawn(plex::run(Ctx::new(handle)));
 }

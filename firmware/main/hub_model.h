@@ -27,6 +27,7 @@ typedef struct {
     bool active;
     bool playing;
     bool can_seek;
+    bool no_controls;   // display-only source (a Plex player that can't be remote controlled)
     int pos;            // seconds
     int dur;
     uint32_t art_id;    // 0 = no cover
@@ -35,6 +36,18 @@ typedef struct {
     char album[96];
     char source[32];
 } hub_media_t;
+
+// A Plex or Jellyfin server: its own section on the Media page.
+typedef struct {
+    bool configured;    // false: no server set up, the Media page shows the PC only
+    bool online;
+    int streams, transcoding;
+    char name[32];
+    char kind[12];      // "plex" or "jellyfin"
+    char version[48];   // "Plex Media Server 1.41.2"
+    char library[96];   // "312 movies, 45 shows, 2,104 episodes"
+    hub_media_t now;    // the session shown (now.active false: nothing playing)
+} hub_server_t;
 
 #define HUB_MAX_EVENTS 16
 typedef struct {
