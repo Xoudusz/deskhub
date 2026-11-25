@@ -37,8 +37,14 @@ version=$(git describe --tags --match 'firmware-v*' --always --dirty 2>/dev/null
 # Start each build from the defaults files, so edits to sdkconfig.local (or the
 # defaults) always take effect. The old sdkconfig is removed inside the
 # container because the container owns the build directory.
+# That regenerates sdkconfig.h and recompiles everything, so the compiler cache
+# (ccache, on by default in the IDF image) lives outside the container: rebuilds
+# then take seconds instead of minutes. CI caches the same directory.
+ccache_dir="${DESKHUB_CCACHE:-$HOME/.cache/deskhub-ccache}"
+mkdir -p "$ccache_dir"
 docker run --rm \
     -v "$PWD":/project -w /project \
+    -v "$ccache_dir":/ccache -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=1G \
     -e IDF_TARGET="$target" -e HOME=/tmp \
     "$IDF_IMAGE" \
     bash -c 'rm -f "$1/sdkconfig" && idf.py -B "$1" -D SDKCONFIG="$1/sdkconfig" -D SDKCONFIG_DEFAULTS="$2" -D PROJECT_VER="$3" -D HUB_VARIANT="$4" build merge-bin -o deskhub-merged.bin' \

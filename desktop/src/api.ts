@@ -50,6 +50,10 @@ export type Status = {
 
 /** Firmware card: newest GitHub release and whether this board can and should take it. */
 export type FirmwareCheck = { latest: string | null; update_available: boolean; blocked: string | null; error: string | null };
+/** A board found on USB (its token is saved by the backend, never sent here). */
+export type UsbBoard = { port: string; version: string; variant: string; ssid: string; ip: string; saved: number; token_saved: boolean };
+export type UsbNetwork = { ssid: string; rssi: number; secure: boolean };
+export type UsbJoined = { ip: string; host: string };
 
 export type SettingsPatch = { [K in keyof Settings]?: Partial<Settings[K]> };
 
@@ -194,7 +198,30 @@ const mock: Settings = {
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
 let mockAutostart = true;
-const subs = { status: new Set<(s: Status) => void>(), settings: new Set<(s: Settings) => void>() };
+const subs = {
+  status: new Set<(s: Status) => void>(),
+  settings: new Set<(s: Settings) => void>(),
+  sim: new Set<(f: SimFrame) => void>(),
+};
+
+/** One frame for the simulator, as the board would get it: JSON, or a binary frame in base64. */
+export type SimFrame = { json: unknown } | { bin: string };
+
+/** The home message the app sends the board (crates/core/src/pages.rs home_message, grid part). */
+function mockHomeFrame(): SimFrame {
+  return { json: { type: "home", header: mock.home.header, grid: mock.home.grid.map(c => ({ widget: c.widget, x: c.x, y: c.y, w: c.w, h: c.h })) } };
+}
+
+/** Browser mock: a plausible board state for the simulator. */
+function mockSimFrames(): SimFrame[] {
+  return [
+    { json: { type: "layout", pages: ["home", "stats", "ai", "weather", "media", "shortcuts", "timer"], ordered: true, nav: "bottom", seconds: mock.display.clock_seconds } },
+    mockHomeFrame(),
+    { json: { type: "stats", cpu: 14, cpu_temp: 52, gpu: 31, gpu_temp: 48, ram_used: 11.2, ram_total: 32, vram_used: 3.1, vram_total: 16, net_down: 120000, net_up: 9000, disk: 61, cpu_name: "Ryzen 7 7800X3D", gpu_name: "Radeon RX 7900 XT" } },
+    { json: { type: "media", active: true, playing: true, title: "Midnight City", artist: "M83", album: "Hurry Up, We're Dreaming", source: "Spotify", pos: 95, dur: 243, can_seek: true, art_id: 0 } },
+    { json: { type: "ai", provider: "claude", limits: { five_hour: { pct: 42, reset: Math.floor(Date.now() / 1000) + 5400 }, updated: Math.floor(Date.now() / 1000) }, block: { active: true, tokens: 182000, messages: 23 }, today: { tokens: 640000, output: 52000, messages: 88 }, days: [12, 30, 22, 41, 18, 9, 33], last_active: Math.floor(Date.now() / 1000) } },
+  ];
+}
 
 function mockEmitSettings() {
   subs.settings.forEach(cb => cb(clone(mock)));
@@ -207,6 +234,7 @@ function mockMerge(p: SettingsPatch): Settings {
     else (mock as unknown as Record<string, unknown>)[k] = v;
   }
   mockEmitSettings();
+  if (p.home) subs.sim.forEach(cb => cb(mockHomeFrame()));
   return clone(mock);
 }
 
@@ -226,6 +254,17 @@ export const api = {
   setSettings: (patch: SettingsPatch): Promise<Settings> => (TAURI ? invoke<Settings>("set_settings", { patch }) : Promise.resolve(mockMerge(patch))),
   getStatus: (): Promise<Status> => (TAURI ? invoke<Status>("get_status") : Promise.resolve({ ...mockStatus })),
   /** PNG as a data URL (800x480); the browser mock returns a static picture. */
+  /** The simulator's starting state: every frame the board would get on connect. */
+  simState: (): Promise<SimFrame[]> => (TAURI ? invoke<SimFrame[]>("sim_state") : Promise.resolve(mockSimFrames())),
+  /** Simulator frames as they are published (and layout/home when settings change). */
+  onSimFrame: async (cb: (f: SimFrame) => void): Promise<void> => {
+    if (TAURI) await listen<SimFrame>("sim-frame", e => cb(e.payload));
+    else subs.sim.add(cb);
+  },
+  /** Frames were missed: reload the whole state with simState. */
+  onSimResync: async (cb: () => void): Promise<void> => {
+    if (TAURI) await listen("sim-resync", () => cb());
+  },
   boardScreenshot: (): Promise<string> => (TAURI ? invoke<string>("board_screenshot") : Promise.resolve("/mock-board.png")),
   boardTap: async (x: number, y: number): Promise<void> => {
     if (TAURI) await invoke("board_tap", { x, y });
@@ -237,6 +276,39 @@ export const api = {
     if (TAURI) return invoke<string>("board_firmware", { path: path ?? null });
     await new Promise(r => setTimeout(r, 1500));
     return "installed; restarting";
+  },
+  /** Find the board on USB; saves its token and host. */
+  usbFind: async (): Promise<UsbBoard> => {
+    if (TAURI) return invoke<UsbBoard>("usb_find");
+    await new Promise(r => setTimeout(r, 800));
+    mockMerge({ board: { host: "deskhub.local", token: "mock-token-from-usb" } });
+    return { port: "COM3", version: "firmware-v0.9.0", variant: "p4rev1", ssid: "", ip: "", saved: 0, token_saved: true };
+  },
+  /** Networks the board on `port` sees. */
+  usbScan: async (port: string): Promise<UsbNetwork[]> => {
+    if (TAURI) return invoke<UsbNetwork[]>("usb_scan", { port });
+    await new Promise(r => setTimeout(r, 1200));
+    return [
+      { ssid: "Home Wi-Fi", rssi: -42, secure: true },
+      { ssid: "Office", rssi: -61, secure: true },
+      { ssid: "Cafe Guest", rssi: -79, secure: false },
+    ];
+  },
+  /** Join and save a network on the board; resolves with its address. */
+  usbWifi: async (port: string, ssid: string, pass: string): Promise<UsbJoined> => {
+    if (TAURI) return invoke<UsbJoined>("usb_wifi", { port, ssid, pass });
+    await new Promise(r => setTimeout(r, 1500));
+    if (pass.startsWith("wrong")) throw new Error("couldn't join: check the password and that the network is in range");
+    return { ip: "192.168.1.50", host: "deskhub" };
+  },
+  /** A fresh 4-digit code for the board's pairing prompt. */
+  boardPairCode: (): Promise<string> =>
+    TAURI ? invoke<string>("board_pair_code") : Promise.resolve(String(Math.floor(Math.random() * 10000)).padStart(4, "0")),
+  /** Ask the board for its token (it shows `code`, the user taps Allow); saves it. */
+  boardPair: async (code: string): Promise<void> => {
+    if (TAURI) return invoke<void>("board_pair", { code });
+    await new Promise(r => setTimeout(r, 2500));
+    mockMerge({ board: { token: "mock-token-from-pair" } });
   },
   /** Start with Windows; the setter returns the state Windows reports afterwards. */
   autostartGet: (): Promise<boolean> => (TAURI ? invoke<boolean>("autostart_get") : Promise.resolve(mockAutostart)),

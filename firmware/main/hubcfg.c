@@ -5,10 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bootloader_random.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_rom_crc.h"
 #include "nvs.h"
 #include "sdkconfig.h"
+#include "wifi_store.h"
 
 // Set by build.sh through CMake (firmware/main/CMakeLists.txt).
 #ifndef HUB_VARIANT
@@ -97,18 +100,45 @@ static bool nvs_has(nvs_handle_t h, const char *key)
     return nvs_get_str(h, key, buf, &len) == ESP_OK && buf[0];
 }
 
+// A new random token for a board that has none (a release image set up on its Wi-Fi screen).
+// 16 characters from 32 easy-to-type ones (no 0/o, 1/l): 80 bits. This runs at boot, before
+// any radio is on, so the hardware entropy source is switched on for it: without it
+// esp_random() is only a pseudo-random sequence.
+static void make_token(char *out, size_t n)
+{
+    static const char ABC[] = "abcdefghijkmnpqrstuvwxyz23456789";
+    size_t len = n - 1 < 16 ? n - 1 : 16;
+    uint8_t rnd[16];
+    bootloader_random_enable();
+    esp_fill_random(rnd, sizeof(rnd));
+    bootloader_random_disable();
+    for (size_t i = 0; i < len; i++) out[i] = ABC[rnd[i] % 32];   // 256 % 32 == 0: no bias
+    out[len] = 0;
+    memset(rnd, 0, sizeof(rnd));
+}
+
 void hubcfg_load(void)
 {
     seed(&s_cfg);
     const bool seed_creds = s_cfg.ssid[0] != 0;
+    bool wifi_fresh = false;   // a local build with Wi-Fi settings it hasn't stored before
 
     nvs_handle_t h;
     if (nvs_open("hub", NVS_READWRITE, &h) != ESP_OK) {
         ESP_LOGE(TAG, "nvs open failed; using the compiled-in settings");
+        wifi_store_init(s_cfg.ssid, s_cfg.pass, true);
         return;
     }
     bool use_nvs = true;
     if (seed_creds) {
+        // Its own checksum for the Wi-Fi part: a new city in sdkconfig.local must not bring
+        // back a network that was forgotten on the board.
+        uint32_t wcrc = esp_rom_crc32_le(0, (const uint8_t *)s_cfg.ssid, sizeof(s_cfg.ssid));
+        wcrc = esp_rom_crc32_le(wcrc, (const uint8_t *)s_cfg.pass, sizeof(s_cfg.pass));
+        uint32_t old_w = 0;
+        if (nvs_get_u32(h, "seed_wcrc", &old_w) != ESP_OK || old_w != wcrc) {
+            if (nvs_set_u32(h, "seed_wcrc", wcrc) == ESP_OK && nvs_commit(h) == ESP_OK) wifi_fresh = true;
+        }
         // A local build: copy its settings in on first boot and whenever they change.
         const uint32_t crc = esp_rom_crc32_le(0, (const uint8_t *)&s_cfg, sizeof(s_cfg));
         uint32_t old = 0;
@@ -126,8 +156,21 @@ void hubcfg_load(void)
         }
     }
     if (use_nvs) read_all(h, &s_cfg);
-    s_cfg.creds_in_nvs = nvs_has(h, "h_ssid") && nvs_has(h, "h_token");
+    if (use_nvs && !s_cfg.token[0]) {
+        make_token(s_cfg.token, sizeof(s_cfg.token));
+        esp_err_t err = nvs_set_str(h, "h_token", s_cfg.token);
+        if (err == ESP_OK) err = nvs_commit(h);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "made a new token (shown on the Wi-Fi screen)");
+        } else {
+            ESP_LOGE(TAG, "saving the new token failed: %s", esp_err_to_name(err));
+        }
+    }
+    const bool token_in_nvs = nvs_has(h, "h_token");
     nvs_close(h);
+    // The single network of older firmware (h_ssid) becomes the first saved one.
+    wifi_store_init(s_cfg.ssid, s_cfg.pass, wifi_fresh || !use_nvs);
+    s_cfg.creds_in_nvs = wifi_store_count() > 0 && token_in_nvs;
     ESP_LOGI(TAG, "variant %s, credentials %s", HUB_VARIANT, hubcfg_creds());
 }
 
@@ -136,9 +179,23 @@ const hub_cfg_t *hubcfg(void)
     return &s_cfg;
 }
 
+// Equal when the dashes are left out: the Wi-Fi screen shows a token as "abcd-efgh-...",
+// so it works typed with or without them.
+static bool same_without_dashes(const char *a, const char *b)
+{
+    for (;;) {
+        while (*a == '-') a++;
+        while (*b == '-') b++;
+        if (*a != *b) return false;
+        if (!*a) return true;
+        a++;
+        b++;
+    }
+}
+
 bool hubcfg_token_ok(const char *token)
 {
-    return token && token[0] && s_cfg.token[0] && strcmp(token, s_cfg.token) == 0;
+    return token && token[0] && s_cfg.token[0] && same_without_dashes(token, s_cfg.token);
 }
 
 const char *hubcfg_variant(void)

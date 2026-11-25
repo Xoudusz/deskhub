@@ -1,4 +1,4 @@
-//! HTTP calls to the board: screenshot (BMP to PNG), tap and the root page.
+//! HTTP calls to the board: screenshot (BMP to PNG), tap, pairing and the root page.
 
 use std::io::Cursor;
 use std::time::Duration;
@@ -12,6 +12,8 @@ pub const SCREEN_H: i64 = 480;
 
 const QUICK: Duration = Duration::from_secs(5);
 const SCREENSHOT: Duration = Duration::from_secs(10);
+/// The board waits a minute for Allow / Deny.
+const PAIR: Duration = Duration::from_secs(75);
 /// Upload plus the minute the board waits for "Install" plus writing the image.
 const FIRMWARE: Duration = Duration::from_secs(240);
 
@@ -42,6 +44,65 @@ pub async fn firmware(host: &str, token: &str, image: Vec<u8>) -> Result<String>
         bail!("board said no ({status}): {}", text.trim());
     }
     Ok(text.trim().to_string())
+}
+
+/// What the board gives on Allow. Debug leaves the token out.
+#[derive(Clone, serde::Deserialize, PartialEq, Eq)]
+pub struct Paired {
+    pub token: String,
+    #[serde(default)]
+    pub host: String,
+}
+
+impl std::fmt::Debug for Paired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Paired")
+            .field("token", &format_args!("<{} chars>", self.token.len()))
+            .field("host", &self.host)
+            .finish()
+    }
+}
+
+/// A random 4-digit code for a pairing prompt: the app shows it, the board shows it, and
+/// the user allows only when both match.
+pub fn pair_code() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    // RandomState is seeded from the OS's random source.
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default(),
+    );
+    format!("{:04}", h.finish() % 10_000)
+}
+
+/// Ask the board for its token (firmware 0.9.0+): it shows "Pair with <name>?" with `code`
+/// and waits up to a minute for Allow or Deny. No token is needed to ask.
+pub async fn pair(host: &str, name: &str, code: &str) -> Result<Paired> {
+    let url = format!("http://{host}/pair");
+    let client = reqwest::Client::builder()
+        .timeout(PAIR)
+        .build()
+        .context("http client")?;
+    let resp = client
+        .post(&url)
+        .query(&[("name", name), ("code", code)])
+        .send()
+        .await
+        .map_err(|e| anyhow!("board request failed: {}", e.without_url()))?;
+    let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap_or_default();
+    match status {
+        200 => serde_json::from_str(&text).context("the board's pairing answer"),
+        403 => bail!("Denied on the board."),
+        404 => bail!("This board's firmware can't pair yet: update it to 0.9.0 or newer."),
+        408 => bail!("Nobody answered on the board within a minute."),
+        429 => bail!("Denied a moment ago: wait 10 seconds and try again."),
+        503 => bail!("The board has no token yet: set it up over USB first."),
+        _ => bail!("board said no ({status}): {}", text.trim()),
+    }
 }
 
 /// An ESP app image starts with 0xE9 and has a sane size; a merged image (bootloader at
@@ -202,6 +263,14 @@ mod tests {
 
     /// One-shot HTTP server: returns the request line and answers with `body`.
     async fn serve_once(body: Vec<u8>) -> (u16, tokio::task::JoinHandle<String>) {
+        serve_status("200 OK", body).await
+    }
+
+    /// Same, with any status line.
+    async fn serve_status(
+        status: &'static str,
+        body: Vec<u8>,
+    ) -> (u16, tokio::task::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let task = tokio::spawn(async move {
@@ -216,7 +285,7 @@ mod tests {
                 req.extend_from_slice(&buf[..n]);
             }
             let head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             );
             sock.write_all(head.as_bytes()).await.unwrap();
@@ -274,6 +343,50 @@ mod tests {
         let text = root(&format!("127.0.0.1:{port}")).await.unwrap();
         assert_eq!(text, "<h1>deskhub</h1>");
         assert_eq!(task.await.unwrap(), "GET / HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn pair_sends_name_and_code_and_reads_token() {
+        let (port, task) =
+            serve_status("200 OK", br#"{"token":"abcd2345efgh6789","host":"deskhub"}"#.to_vec())
+                .await;
+        let p = pair(&format!("127.0.0.1:{port}"), "My PC", "0427")
+            .await
+            .unwrap();
+        assert_eq!(p.token, "abcd2345efgh6789");
+        assert_eq!(p.host, "deskhub");
+        assert!(!format!("{p:?}").contains("abcd"));
+        assert_eq!(
+            task.await.unwrap(),
+            "POST /pair?name=My+PC&code=0427 HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn pair_explains_each_refusal() {
+        for (status, want) in [
+            ("403 Forbidden", "Denied on the board"),
+            ("404 Not Found", "update it to 0.9.0"),
+            ("408 Request Timeout", "Nobody answered"),
+            ("429 Too Many Requests", "wait 10 seconds"),
+            ("400 Bad Request", "already open"),
+        ] {
+            let (port, _task) = serve_status(status, b"a pairing prompt is already open".to_vec()).await;
+            let err = pair(&format!("127.0.0.1:{port}"), "PC", "1234")
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(want), "{status}: {err}");
+        }
+    }
+
+    #[test]
+    fn pair_codes_are_four_digits() {
+        for _ in 0..50 {
+            let c = pair_code();
+            assert_eq!(c.len(), 4, "{c}");
+            assert!(c.chars().all(|ch| ch.is_ascii_digit()), "{c}");
+        }
     }
 
     #[test]

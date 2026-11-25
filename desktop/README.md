@@ -7,6 +7,9 @@ Layout:
 - `crates/core/`: the service. It has no Tauri or GUI dependency, so it builds and tests on Linux. It holds the board protocol, the WebSocket session, the settings with config.toml import, and the HTTP calls (screenshot, tap).
 - `src-tauri/`: the Tauri shell. It provides the window, tray, autostart and single-instance, and wraps `core` in commands and events.
 - `src/`, `index.html`: the frontend (vanilla TypeScript + Vite). Run `npm run dev` to open it in a browser with a mock backend.
+- `src/sim.ts`: the simulated board (Status preview and Home builder): the firmware UI compiled to WASM by
+  `bash ../firmware/sim/build.sh` into `public/sim/` (not committed; CI builds it). Without it the views say
+  "Simulator not built".
 
 The Python companion (`../companion`) still does calendars, printers, internet stats and GitHub. Don't run it at the same time as the app: the board accepts one companion only.
 
@@ -21,15 +24,23 @@ Commands (`invoke`):
 | `get_status` | – | `Status` |
 | `board_screenshot` | – | `string`: PNG as a `data:image/png;base64,...` URL (800x480) |
 | `board_tap` | `{ x: number, y: number }` (board pixels, 0-799 / 0-479) | `null` |
+| `sim_state` | – | `SimFrame[]`: every frame the board would get on connect (layout, home, then the published state, binary first; the board's own location while the app sets none). `SimFrame = { json: object } \| { bin: string /* base64 ART1/STM1 */ }` |
 | `autostart_get` / `autostart_set` | – / `{ on: boolean }` | `boolean`: Start with Windows (enabled on first run) |
 | `firmware_check` | – | `{ latest: string \| null, update_available: boolean, blocked: string \| null, error: string \| null }`: newest `firmware-latest/firmware.json` release for the connected board |
 | `board_firmware_github` | – | `string`: downloads the release image for the board's variant, checks sha256 and size, sends it (`POST /firmware`, the board asks first). Refused unless the board reports `creds: "nvs"` and a known variant |
+| `usb_find` | – | `{ port, version, variant, ssid, ip, saved, token_saved }`: the first USB serial port (VID 303A / 1A86 / 10C4) whose board answers `info`; saves the board's token and `<host>.local`. Never returns the token. Windows only. The port is opened with DTR/RTS off (serialport's default DCB): a port opened with them on hung the P4 board until replugged |
+| `usb_scan` | `{ port: string }` | `{ ssid, rssi, secure }[]`: networks the board sees |
+| `usb_wifi` | `{ port: string, ssid: string, pass: string }` | `{ ip, host }`: the board joined and saved the network (saves `<host>.local`); errors name the cause, never the password |
+| `board_pair_code` | – | `string`: a random 4-digit code |
+| `board_pair` | `{ code: string }` | `null`: `POST /pair` to the board with the computer name and code; saves the token on Allow, explains Deny / no answer / cooldown / old firmware |
 | `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):
 
 - `status`: `Status`, sent on every change.
 - `settings`: `Settings`, sent after any change.
+- `sim-frame`: `SimFrame`, every frame published for the board (and layout/home when settings change them).
+- `sim-resync`: frames were missed; call `sim_state` again.
 
 ```ts
 type Settings = {
@@ -48,7 +59,7 @@ type Settings = {
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | <theme> };   // default midnight / "same"; board_theme picks the palette sent to the board ("theme" message)
   ai: {
     agent: "auto" | "claude" | "codex";   // auto = most recently used
-    live_limits: boolean;        // opt-in Anthropic usage endpoint, default false
+    live_limits: boolean;        // opt-in: 5-hour/weekly limits from Anthropic's usage endpoint with Claude Code's sign-in (~/.claude/.credentials.json; token never logged or sent to the board), default false
     alerts: boolean;             // "Claude is waiting" alerts, default true
     idle_alert_seconds: number;  // default 30
   };

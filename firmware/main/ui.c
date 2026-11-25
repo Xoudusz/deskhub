@@ -19,13 +19,7 @@
 
 static const char *TAG = "ui";
 
-extern const uint8_t icons_ttf_start[] asm("_binary_MaterialIcons_Regular_ttf_start");
-extern const uint8_t icons_ttf_end[] asm("_binary_MaterialIcons_Regular_ttf_end");
-// Inter: Medium for text, SemiBold for large numbers and the clock.
-extern const uint8_t text_ttf_start[] asm("_binary_Inter_Medium_ttf_start");
-extern const uint8_t text_ttf_end[] asm("_binary_Inter_Medium_ttf_end");
-extern const uint8_t clock_ttf_start[] asm("_binary_Inter_SemiBold_ttf_start");
-extern const uint8_t clock_ttf_end[] asm("_binary_Inter_SemiBold_ttf_end");
+#include "ui_fonts.h"
 
 lv_font_t *g_icon_20, *g_icon_24, *g_icon_32, *g_icon_48, *g_icon_80, *g_font_clock;
 lv_font_t *g_font_14, *g_font_16, *g_font_20, *g_font_24, *g_font_28, *g_font_32, *g_font_48;
@@ -61,6 +55,7 @@ static uint8_t *s_art_buf;
 static lv_obj_t *s_pages[PAGE_COUNT];
 static lv_obj_t *s_nav[PAGE_COUNT];
 static lv_obj_t *s_wifi_icon, *s_pc_icon;
+static void wifi_icon_cb(lv_event_t *e);
 static lv_obj_t *s_nav_logo;   // the AI tab's agent logo
 int g_nav = NAV_LEFT;
 
@@ -774,6 +769,16 @@ static void build_rail(lv_obj_t *scr)
     }
     s_pc_icon = ui_label(status, font, COL_DIM, ICON_DESKTOP_WINDOWS);
     s_wifi_icon = ui_label(status, font, COL_DIM, ICON_WIFI_OFF);
+    // Tap the Wi-Fi icon for the Wi-Fi screen (change or add a network).
+    lv_obj_add_flag(s_wifi_icon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(s_wifi_icon, 14);
+    lv_obj_add_event_cb(s_wifi_icon, wifi_icon_cb, LV_EVENT_CLICKED, NULL);
+}
+
+static void wifi_icon_cb(lv_event_t *e)
+{
+    (void)e;
+    ui_wifi_show();
 }
 
 static void tick_cb(lv_timer_t *t)

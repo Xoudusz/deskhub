@@ -181,7 +181,13 @@ It builds the firmware and sends it to the board over Wi-Fi. The board shows **I
 
 If a new firmware can't start properly, the board goes back to the previous one by itself on the next restart.
 
-**Release images from GitHub.** The board keeps Wi-Fi, token, hostname and location in its storage (NVS); release images are built without `sdkconfig.local`, so they contain no Wi-Fi or token of yours (only the public defaults, which the board ignores). A local build (with `sdkconfig.local`) copies its settings in on first boot and again whenever you change them, so build and flash locally once. After that the board can take the public images from the [firmware releases](https://github.com/Xoudusz/deskhub/releases) (tag `firmware-vX.Y.Z`): the desktop app offers them under Connection > Firmware and only when the board reports its settings in storage. A release image on a board that never ran a local build has no Wi-Fi and shows **Desk Hub needs setup**. To publish one, push a `firmware-vX.Y.Z` tag; `.github/workflows/firmware-release.yml` builds s3, p4rev1 and p4rev3 without `sdkconfig.local` and writes `firmware.json` to the release `firmware-latest`.
+**Wi-Fi on the board.** Tap the Wi-Fi icon in the navigation bar to open the Wi-Fi screen. It shows the network the board is on, its address (`deskhub.local`), the app token, the saved networks and the networks nearby. Tap a network to join it; tap **×** next to a saved network to forget it. The board remembers up to 5 networks (the oldest drops off) and joins the strongest one in range, so you can move it between places. Passwords stay in the board's storage.
+
+**Setup with a USB cable.** Plug the board into the PC with a USB data cable and open the desktop app: Connection > USB setup > **Find board**. The app finds the board on its COM port, saves the board's token and lists the networks the board sees; pick one, type the password and press **Set up Wi-Fi**. The board joins and saves the network, and the app connects to it there. Nothing has to be typed on the board. The token is given out over the cable without asking, since whoever holds the cable could also reflash the board.
+
+**Pair over Wi-Fi.** When the board is already on your network, Connection > Board > **Pair with the board** gets its token without typing: the app shows a 4-digit code, the board shows **Pair with <PC name>?** with a code and the PC's address. Tap **Allow** only when both codes match (another device asking at the same moment can't know the app's code). **Deny**, or no answer within a minute, sends nothing; new requests then wait 10 seconds. The token on the Wi-Fi screen shows in groups of four (`xxxx-xxxx-xxxx-xxxx`); typed with or without the dashes, it works.
+
+**Release images from GitHub.** The board keeps Wi-Fi, token, hostname and location in its storage (NVS); release images are built without `sdkconfig.local`, so they contain no Wi-Fi or token of yours (only the public defaults, which the board ignores). A local build (with `sdkconfig.local`) copies its settings in on first boot and again whenever you change them. A board that runs a release image (firmware 0.8 or later) without ever having run a local build opens its **Wi-Fi** screen instead: pick your network, type the password on the on-screen keyboard, then pair the desktop app (Connection > Board > Pair) or copy the token shown there. With firmware 0.9 or later, USB setup from the app does both at once. The board makes that token itself on first start. Once Wi-Fi and token are in storage, the board can take the public images from the [firmware releases](https://github.com/Xoudusz/deskhub/releases) (tag `firmware-vX.Y.Z`): the desktop app offers them under Connection > Firmware and only when the board reports its settings in storage. To publish one, push a `firmware-vX.Y.Z` tag; `.github/workflows/firmware-release.yml` builds s3, p4rev1 and p4rev3 without `sdkconfig.local` and writes `firmware.json` to the release `firmware-latest`.
 
 ### 4. Start the companion
 
@@ -425,6 +431,10 @@ colors = "green"   # or "accent": shades of the board's amber
 ```
 
 ## Customizing Home
+
+The desktop app's *Pages* section has a Home builder: drag blocks, resize them by the corner, and see the
+result on a simulated board below the grid (the board's own UI, compiled to WASM; `firmware/sim/`). The
+*Status* section shows the same simulator while the board is offline, or when you pick *Simulated*.
 
 Home is a grid of 5 columns by 3 rows, under a slim bar with the time and date. Each widget takes a size in cells (width × height) and lays itself out for it. Place widgets in `companion/config.toml`, or use setup's *Home screen* step, which asks for a widget and a size and puts it in the first free spot (type `undo` to take the last one off, or `clear` to start over):
 
@@ -705,7 +715,7 @@ The board's fonts only cover Latin letters. Accented letters in labels, event ti
 
 ## How it works
 
-The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion connects, sends `{"type": "hello", "token": ...}`, and once the board answers `hello_ok` it streams JSON messages. `hello_ok` carries `version`, `variant` (`s3`, `p4rev1` or `p4rev3`), `creds` (`nvs` once Wi-Fi and token are in the board's storage, `seed` or `none`) and `location` (`city`, `lat`, `lon`, `tz`, `fahrenheit`, `h24`).
+The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion connects, sends `{"type": "hello", "token": ...}`, and once the board answers `hello_ok` it streams JSON messages. `hello_ok` carries `version`, `variant` (`s3`, `p4rev1` or `p4rev3`), `creds` (`nvs` once a saved Wi-Fi network and the token are in the board's storage, `seed` or `none`) and `location` (`city`, `lat`, `lon`, `tz`, `fahrenheit`, `h24`).
 
 | From the PC | Contents |
 | --- | --- |
@@ -739,6 +749,7 @@ The board also serves a few HTTP endpoints, all of which need the token as `?tok
 | Endpoint | What it does |
 | --- | --- |
 | `POST /firmware` | Takes a new firmware image. The board asks on screen before installing it (see [Updating the firmware](#updating-the-firmware)). |
+| `POST /pair?name=<PC>&code=<4-6 digits>` | No token. The board shows **Pair with <PC>?** with the code and the asking address; **Allow** answers `{"token", "host"}`, **Deny** 403, no answer within a minute 408, a request within 10 s of those 429, a second request while one is open 400, a board without a token 503. Requests with an `Origin` header (web pages) get 403. |
 | `GET /screenshot` | The current screen as a BMP. |
 | `GET /tap?x=…&y=…` | Taps the screen at that point. |
 | `GET /perf` | Rendering stats as JSON (frames per second, frame times). `&full=1` also times a full-screen redraw. |

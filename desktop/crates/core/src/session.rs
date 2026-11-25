@@ -46,6 +46,19 @@ pub enum Out {
     Bin(Vec<u8>),
 }
 
+impl Out {
+    /// For the simulator in the settings window: `{"json": {...}}` or `{"bin": "<base64>"}`.
+    pub fn to_sim_json(&self) -> Value {
+        use base64::Engine;
+        match self {
+            Out::Json(v) => serde_json::json!({ "json": v }),
+            Out::Bin(b) => {
+                serde_json::json!({ "bin": base64::engine::general_purpose::STANDARD.encode(b) })
+            }
+        }
+    }
+}
+
 /// The latest frame per key (e.g. "stats", "media", "art"), in first-publish order.
 /// The board keeps this state in RAM only, so all of it is resent after each connect.
 #[derive(Default)]
@@ -71,7 +84,12 @@ pub struct ServiceHandle {
     incoming_tx: broadcast::Sender<Incoming>,
     stop_tx: watch::Sender<bool>,
     latest: Arc<Mutex<Latest>>,
+    sim_tx: broadcast::Sender<Out>,
 }
+
+/// Frames buffered for the simulator's live feed. Small: an art frame is up to ~300 KB, and a
+/// reader that falls behind resyncs from `sim_snapshot` anyway.
+const SIM_FEED: usize = 32;
 
 impl Service {
     pub fn start(settings: Settings) -> ServiceHandle {
@@ -85,6 +103,7 @@ impl Service {
         let (incoming_tx, _) = broadcast::channel(64);
         let (stop_tx, stop_rx) = watch::channel(false);
         let latest = Arc::new(Mutex::new(Latest::default()));
+        let (sim_tx, _) = broadcast::channel(SIM_FEED);
         let task = Task {
             opts,
             settings_rx,
@@ -102,6 +121,7 @@ impl Service {
             incoming_tx,
             stop_tx,
             latest,
+            sim_tx,
         }
     }
 }
@@ -113,7 +133,47 @@ impl ServiceHandle {
 
     /// New settings. Sent to the board right away if they changed the layout or home.
     pub fn update_settings(&self, settings: Settings) {
-        let _ = self.settings_tx.send_replace(settings);
+        let (layout, home) = (layout_message(&settings), home_message(&settings));
+        let old = self.settings_tx.send_replace(settings);
+        // The simulator gets the same layout/home the board would.
+        if layout != layout_message(&old) {
+            let _ = self.sim_tx.send(Out::Json(layout));
+        }
+        if home != home_message(&old) {
+            let _ = self.sim_tx.send(Out::Json(home));
+        }
+    }
+
+    /// For the simulator: every frame the board would get on connect, in the same order:
+    /// layout, home, then the published state with binary frames (art) first. The board's own
+    /// location (from hello_ok) stands in while the app doesn't set one.
+    pub fn sim_snapshot(&self) -> Vec<Out> {
+        let settings = self.settings_tx.borrow().clone();
+        let mut out = vec![
+            Out::Json(layout_message(&settings)),
+            Out::Json(home_message(&settings)),
+        ];
+        let latest = self.latest.lock().unwrap();
+        let has_location = latest.0.iter().any(|(k, _)| k == "location");
+        let mut state: Vec<Out> = latest.0.iter().map(|(_, o)| o.clone()).collect();
+        drop(latest);
+        state.sort_by_key(|o| matches!(o, Out::Json(_)));
+        if !has_location {
+            if let Some(l) = self.status_rx.borrow().location.clone() {
+                out.push(Out::Json(serde_json::json!({
+                    "type": "location", "city": l.city, "lat": l.lat, "lon": l.lon, "tz": l.tz,
+                    "fahrenheit": l.fahrenheit, "h24": l.h24,
+                })));
+            }
+        }
+        out.extend(state);
+        out
+    }
+
+    /// The simulator's live feed: every frame published from now on, and layout/home when
+    /// settings change them.
+    pub fn sim_frames(&self) -> broadcast::Receiver<Out> {
+        self.sim_tx.subscribe()
     }
 
     /// Queue a one-off message for the board. Dropped while the link is down.
@@ -136,6 +196,7 @@ impl ServiceHandle {
         // Store and queue under one lock, so two publishers of a key can't reorder.
         let mut latest = self.latest.lock().unwrap();
         latest.set(key, out.clone());
+        let _ = self.sim_tx.send(out.clone());
         let _ = self.out_tx.send(out);
     }
 
@@ -144,6 +205,7 @@ impl ServiceHandle {
         Publisher {
             out_tx: self.out_tx.clone(),
             latest: self.latest.clone(),
+            sim_tx: self.sim_tx.clone(),
         }
     }
 
@@ -167,6 +229,7 @@ impl ServiceHandle {
 pub struct Publisher {
     out_tx: mpsc::UnboundedSender<Out>,
     latest: Arc<Mutex<Latest>>,
+    sim_tx: broadcast::Sender<Out>,
 }
 
 impl Publisher {
@@ -187,6 +250,7 @@ impl Publisher {
         // Store and queue under one lock, so two publishers of a key can't reorder.
         let mut latest = self.latest.lock().unwrap();
         latest.set(key, out.clone());
+        let _ = self.sim_tx.send(out.clone());
         let _ = self.out_tx.send(out);
     }
 }
@@ -529,7 +593,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::{accept_async, WebSocketStream};
 
-    use super::{Options, Service};
+    use super::{Options, Out, Service};
     use crate::pages::{home_message, layout_message};
     use crate::protocol::{hello, Incoming};
     use crate::settings::{Settings, State, Status};
@@ -824,6 +888,49 @@ mod tests {
             assert_eq!(got, want);
         }
         svc.stop();
+    }
+
+    #[test]
+    fn sim_json_shapes() {
+        assert_eq!(
+            Out::Json(json!({"a": 1})).to_sim_json(),
+            json!({"json": {"a": 1}})
+        );
+        assert_eq!(
+            Out::Bin(vec![1, 2, 3]).to_sim_json(),
+            json!({"bin": "AQID"})
+        );
+    }
+
+    #[tokio::test]
+    async fn sim_snapshot_and_feed() {
+        let mut s = settings_for(1, "t");
+        s.board.host = "127.0.0.1:1".into();
+        let svc = super::Service::start_with(s.clone(), fast());
+        svc.publish("stats", json!({"type": "stats", "cpu": 5}));
+        svc.publish_bin("art", vec![b'A', b'R', b'T', b'1']);
+        let snap = svc.sim_snapshot();
+        assert_eq!(snap.len(), 4);
+        match (&snap[0], &snap[1]) {
+            (Out::Json(a), Out::Json(b)) => {
+                assert_eq!(a["type"], "layout");
+                assert_eq!(b["type"], "home");
+            }
+            _ => panic!("layout and home first"),
+        }
+        assert!(matches!(&snap[2], Out::Bin(_)), "art before JSON state");
+        assert!(matches!(&snap[3], Out::Json(v) if v["type"] == "stats"));
+
+        let mut feed = svc.sim_frames();
+        svc.publisher().publish("media", json!({"type": "media"}));
+        assert!(matches!(feed.recv().await.unwrap(), Out::Json(v) if v["type"] == "media"));
+        // A settings change that only touches home sends home, not layout.
+        let mut s2 = s.clone();
+        s2.home.header = !s2.home.header;
+        svc.update_settings(s2.clone());
+        assert!(matches!(feed.recv().await.unwrap(), Out::Json(v) if v["type"] == "home"));
+        svc.update_settings(s2);
+        assert!(feed.try_recv().is_err(), "unchanged settings send nothing");
     }
 
     #[tokio::test]

@@ -8,9 +8,10 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
+import { mountSim, onSimState, simState } from "./sim";
 
 type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
@@ -92,9 +93,33 @@ function render(force = false) {
   const top = main.scrollTop;
   main.innerHTML = sectionHtml();
   main.querySelectorAll<HTMLInputElement>("input[type=range]").forEach(fillRange);
+  mountSim(main, section, section === "pages");
   main.scrollTop = top;
   if (section === "status") refreshShot();
 }
+
+// ---- simulated board (sim.ts) ----
+/** Status preview: the board's screenshot ("live") or the simulator ("sim"). */
+let preview: "live" | "sim" = "live";
+
+/** The simulator's placeholder, with a note when it can't run. */
+function simHtml(): string {
+  const st = simState();
+  const note = st === "missing" ? "Simulator not built (firmware/sim/build.sh)"
+    : st === "failed" ? "The simulator failed to start"
+    : st === "loading" || st === "idle" ? "Starting the simulator" : "";
+  return `<div class="prev sim" data-sim>${note ? `<span class="simnote">${esc(note)}</span>` : ""}</div>`;
+}
+
+// The note over the canvas follows the simulator's state (in place: no re-render mid-edit).
+onSimState(() => {
+  const host = main.querySelector<HTMLElement>("[data-sim]");
+  if (!host) return;
+  const html = simHtml();
+  const note = /<span class="simnote">(.*?)<\/span>/.exec(html)?.[1] ?? "";
+  host.querySelector(".simnote")?.remove();
+  if (note) host.insertAdjacentHTML("afterbegin", `<span class="simnote">${note}</span>`);
+});
 
 function renderNav() {
   nav.innerHTML =
@@ -187,12 +212,17 @@ function statusHtml(): string {
     row("Firmware", esc(st.firmware ?? "Unknown")),
     row("Connected since", st.since ? esc(new Date(st.since * 1000).toLocaleString()) : "Not yet"),
   ].join(""));
-  const body = on
-    ? `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"${lastShot ? ` src="${lastShot}"` : ""}></div>`
-    : lastShot
-      ? `<div class="prev offline"><img class="stale" src="${lastShot}" alt="Last board screen" draggable="false"><span>Board offline: last picture</span></div>`
-      : `<div class="prev offline">Board offline</div>`;
-  return board + card("Live preview", "Tap the picture to press the board", `<div class="swr swsl">${body}</div>`);
+  const sim = !on || preview === "sim";
+  const body = sim
+    ? simHtml()
+    : `<div class="prev" id="prev"><img id="shot" alt="Board screen" draggable="false"${lastShot ? ` src="${lastShot}"` : ""}></div>`;
+  const seg = `<span class="seg">` +
+    `<button type="button" data-act="preview" data-v="live" class="${sim ? "" : "on"}"${on ? "" : " disabled"}>Board</button>` +
+    `<button type="button" data-act="preview" data-v="sim" class="${sim ? "on" : ""}">Simulated</button></span>`;
+  const sub = sim
+    ? "The board's own screen, simulated with the app's data. Clicks act as touches; shortcuts don't run"
+    : "Tap the picture to press the board";
+  return board + card("Preview", sub, row("Show", seg, on ? "" : "Board offline: showing the simulator") + `<div class="swr swsl">${body}</div>`);
 }
 
 function displayHtml(): string {
@@ -310,6 +340,8 @@ function pagesHtml(): string {
     row("Show header", tgl(`data-k="homeHeader"`, S.home.header)),
     `<div class="grid-wrap">${gridHtml()}</div>`,
     sizeRow(),
+    row("Preview", "", "The simulated board, updated when you drop or resize a block"),
+    `<div class="swr swsl">${simHtml()}</div>`,
     row("Add a block", select(`data-k="homeAdd"`, addOpts, "", free.length === 0), esc(homeNote)),
     row("Save as preset",
       `<input class="txt" data-k="presetName" placeholder="Name" maxlength="24" value="${esc(presetName)}" spellcheck="false">` +
@@ -621,7 +653,7 @@ function aiHtml(): string {
   const linked = !!claude && claude.statusline && claude.hooks;
   const usage = card("Usage", "What the board's AI page shows", [
     row("Agent", select(`data-k="aiAgent"`, [["auto", "Most recently used"], ["claude", "Claude Code"], ["codex", "Codex"]], a.agent)),
-    row("Live limits", tgl(`data-k="aiLive"`, a.live_limits), "Reads the 5-hour and weekly limits from Anthropic. Coming in a later update"),
+    row("Live limits", tgl(`data-k="aiLive"`, a.live_limits), "Reads the 5-hour and weekly limits from Anthropic with your Claude Code sign-in (no tokens used)"),
   ].join(""));
   const cc = card("Claude Code", "Limits and waiting alerts come from Claude Code", [
     row(linked ? "Connected" : "Not connected",
@@ -665,9 +697,108 @@ function connectionHtml(): string {
       `<input class="txt" type="${showToken ? "text" : "password"}" data-k="token" value="${esc(S.board.token)}" autocomplete="off" spellcheck="false">` +
       `<button type="button" class="ib" data-act="eye" title="${showToken ? "Hide" : "Show"} token">${icon(showToken ? "eye-off" : "eye", 14)}</button>`,
       "Must match the token on the board"),
+    row("Pair", `<button type="button" data-act="pair"${pairCode ? " disabled" : ""}>${icon("zap", 13)}Pair with the board</button>`,
+      pairCode ? "" : "Gets the token from the board: you tap Allow on it"),
+    ...(pairCode ? [row("Code", `<span class="paircode">${esc(pairCode)}</span>`,
+      "Tap Allow on the board if it shows this same code (within a minute)")] : []),
+    ...(pairNote ? [text(pairNote)] : []),
     row("Config file", `<button type="button" data-act="import">${icon("refresh-cw", 13)}Import from config.toml</button>`,
       S.imported ? "Already imported" : "Copies host and token from the Python companion's config"),
-  ].join("")) + firmwareHtml();
+  ].join("")) + usbHtml() + firmwareHtml();
+}
+
+// Pairing (Board card): the code shown while the board's prompt is open.
+let pairCode = "";
+let pairNote = "";
+
+async function pair() {
+  pairNote = "";
+  try {
+    pairCode = await api.boardPairCode();
+    render(true);
+    await api.boardPair(pairCode);
+    pairNote = "Paired. The token is saved.";
+  } catch (err) {
+    pairNote = `Not paired: ${String(err).replace(/^Error: /, "")}`;
+  }
+  pairCode = "";
+  render(true);
+}
+
+// First setup over the USB cable (USB setup card).
+let usbBoard: UsbBoard | null = null;
+let usbNets: UsbNetwork[] = [];
+let usbSsid = "";
+let usbBusy = "";
+let usbNote = "";
+
+function usbHtml(): string {
+  const b = usbBoard;
+  const rows = [
+    row("Board on USB",
+      `<button type="button" data-act="usb-find"${usbBusy ? " disabled" : ""}>${icon("refresh-cw", 13)}${b ? "Find again" : "Find board"}</button>`,
+      usbBusy === "find" ? "Looking on the USB ports..."
+        : b ? esc(`${b.port}: ${b.version}${b.variant ? ` (${b.variant})` : ""}. ${b.token_saved ? "Token saved." : "The board has no token yet."}`)
+        : "Plug the board into this PC with a USB data cable"),
+  ];
+  if (b) {
+    rows.push(row("Wi-Fi now", `<span>${esc(b.ssid ? `${b.ssid}${b.ip ? ` (${b.ip})` : ""}` : "Not connected")}</span>`));
+    const opts: [string, string][] = usbNets.map(n => [n.ssid, `${n.ssid}${n.secure ? "" : " (open)"}`]);
+    rows.push(row("Network",
+      (opts.length ? select(`data-k="usbSsid"`, opts, usbSsid, !!usbBusy) : `<span class="muted">${usbBusy === "scan" ? "Scanning..." : "No networks yet"}</span>`) +
+      `<button type="button" class="ib" data-act="usb-scan" title="Scan again"${usbBusy ? " disabled" : ""}>${icon("refresh-cw", 13)}</button>`,
+      "Networks the board sees"));
+    rows.push(row("Password",
+      `<input class="txt" type="password" data-k="usbPass" autocomplete="off" spellcheck="false" placeholder="Empty for an open network"${usbBusy ? " disabled" : ""}>`));
+    rows.push(row("", `<button type="button" data-act="usb-wifi"${usbBusy || !usbSsid ? " disabled" : ""}>Set up Wi-Fi</button>`,
+      usbBusy === "wifi" ? "Joining (up to 40 seconds)..." : "The board saves the network and joins it"));
+  }
+  if (usbNote) rows.push(text(usbNote));
+  return card("USB setup", "First setup with a cable: no typing on the board", rows.join(""));
+}
+
+async function usbRun(kind: string, job: () => Promise<void>) {
+  usbBusy = kind;
+  usbNote = "";
+  render(true);
+  try {
+    await job();
+  } catch (err) {
+    usbNote = String(err).replace(/^Error: /, "");
+  }
+  usbBusy = "";
+  render(true);
+}
+
+const usbScan = () => usbRun("scan", async () => {
+  if (!usbBoard) return;
+  usbNets = await api.usbScan(usbBoard.port);
+  if (!usbNets.some(n => n.ssid === usbSsid)) usbSsid = usbNets[0]?.ssid ?? "";
+});
+
+function usbFind() {
+  void usbRun("find", async () => {
+    usbBoard = null;
+    usbNets = [];
+    usbBoard = await api.usbFind();
+  }).then(() => { if (usbBoard) void usbScan(); });
+}
+
+function usbWifi() {
+  const board = usbBoard;
+  const pass = main.querySelector<HTMLInputElement>('[data-k="usbPass"]')?.value ?? "";
+  if (!board || !usbSsid) return;
+  if (pass && (pass.length < 8 || pass.length > 64)) {
+    usbNote = "Wi-Fi passwords have 8 to 64 characters (or none for an open network).";
+    render(true);
+    return;
+  }
+  void usbRun("wifi", async () => {
+    const j = await api.usbWifi(board.port, usbSsid, pass);
+    board.ssid = usbSsid;
+    board.ip = j.ip;
+    usbNote = `Connected to ${usbSsid}${j.ip ? ` as ${j.ip}` : ""}. Desk Hub finds the board there now.`;
+  });
 }
 
 function firmwareHtml(): string {
@@ -790,6 +921,10 @@ async function act(el: HTMLElement) {
     case "preset-delete": deletePreset(); return;
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
+    case "preview":
+      preview = el.dataset.v === "sim" ? "sim" : "live";
+      render(true);
+      return;
     case "tile-select": selTile = Number(el.dataset.idx); render(true); return;
     case "tile-add": {
       const tiles = [...S.tiles, { label: "New tile", icon: "apps", color: "#2b2f3a", action: "keys" as TileAction, target: "", state: null }];
@@ -827,6 +962,10 @@ async function act(el: HTMLElement) {
     case "import": await importConfig(); return;
     case "update-check": checkUpdates(); return;
     case "firmware": await updateFirmware(); return;
+    case "pair": await pair(); return;
+    case "usb-find": usbFind(); return;
+    case "usb-scan": void usbScan(); return;
+    case "usb-wifi": usbWifi(); return;
     case "firmware-github": await updateFirmware(true); return;
     case "fw-recheck": render(true); await refreshFwCheck(); return;
     case "game-image": {
@@ -915,6 +1054,8 @@ main.addEventListener("change", e => {
     case "token":
       void save({ board: { token: t.value } });
       return;
+    case "usbSsid": usbSsid = t.value; render(true); return;
+    case "usbPass": return;
     case "pageOn": {
       const p = t.dataset.page as Page;
       const list = onList();

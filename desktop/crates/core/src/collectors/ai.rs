@@ -4,17 +4,17 @@
 //!
 //! Differences from the Python:
 //! - Days (`days`, `today`, today's `models`) are local days via chrono, like Python.
-//! - claude_live.py is not ported: `live_limits` returns None until HTTPS exists (M5).
+//! - claude_live.py lives in ai/live.rs (opt-in `ai.live_limits`).
 //! - Codex is enabled when its home dir exists, checked every tick (Python checks once at start).
 //! - `block.start` is included, as in the Python output.
 
 mod claude;
 mod codex;
+mod live;
 mod tail;
 mod time;
 
 use std::path::{Path, PathBuf};
-use std::sync::Once;
 use std::time::Duration;
 
 use serde_json::{json, Map, Value};
@@ -26,6 +26,8 @@ use time::{day_of, now_ms, DAY_MS, HOUR_MS};
 
 const HISTORY_DAYS: i64 = 7;
 const BLOCK_MS: i64 = 5 * HOUR_MS;
+/// Claude Code used within this counts as active (live limits poll every minute).
+const LIVE_RECENT_MS: i64 = 15 * 60 * 1000;
 
 /// One token-usage record from either provider. Only counts, model name and time are kept.
 struct Usage {
@@ -54,6 +56,9 @@ impl State {
 
 pub async fn run(ctx: Ctx) {
     let mut state: Option<State> = None;
+    let mut live_poll = live::LivePoll::default();
+    // Epoch s of Claude Code's last use: live limits poll every minute while it is recent.
+    let mut claude_last = 0_i64;
     loop {
         // Copy the AI settings out of the watch borrow before any await.
         let ai = ctx.settings.borrow().ai.clone();
@@ -62,22 +67,31 @@ pub async fn run(ctx: Ctx) {
             "codex" => "codex",
             _ => "auto",
         };
-        let live = ai.live_limits;
         let st = state.take().unwrap_or_else(State::new);
+        let live = if ai.live_limits && agent != "codex" {
+            let now = now_ms();
+            let active = now - claude_last * 1000 < LIVE_RECENT_MS;
+            live_poll.tick(st.home.clone(), now, active).await
+        } else {
+            None
+        };
         let work = tokio::task::spawn_blocking(move || {
             let mut st = st;
             let now = now_ms();
             let cdir = codex_dir(st.home.as_deref());
             let codex_on =
                 agent == "codex" || (agent == "auto" && cdir.as_deref().is_some_and(Path::is_dir));
-            let claude =
-                (agent != "codex").then(|| st.claude.snapshot(st.home.as_deref(), now, live));
+            let claude = (agent != "codex")
+                .then(|| st.claude.snapshot(st.home.as_deref(), now, live.as_ref()));
             let codex = codex_on.then(|| st.codex.snapshot(cdir.as_deref(), now));
             (st, claude, codex)
         });
         match work.await {
             Ok((st, claude, codex)) => {
                 state = Some(st);
+                if let Some(t) = claude.as_ref().and_then(|c| c.get("last_active")) {
+                    claude_last = num(Some(t));
+                }
                 if let Some(msg) = pick_ai(agent, claude.as_ref(), codex.as_ref()) {
                     ctx.out.publish("ai", msg);
                 }
@@ -111,15 +125,6 @@ fn pick_ai(agent: &str, claude: Option<&Value>, codex: Option<&Value>) -> Option
     msg.insert("type".into(), json!("ai"));
     msg.insert("provider".into(), json!(provider));
     Some(Value::Object(msg))
-}
-
-/// Live limits from Anthropic's usage endpoint (claude_live.py). Not ported yet: it needs
-/// HTTPS and the reqwest here is built without TLS.
-// TODO(M5): port LiveLimits (read ~/.claude/.credentials.json, GET api.anthropic.com/api/oauth/usage).
-fn live_limits(_active: bool) -> Option<Value> {
-    static LOGGED: Once = Once::new();
-    LOGGED.call_once(|| log::info!("live limits need TLS (M5)"));
-    None
 }
 
 /// Oldest timestamp kept: the start of the history window.

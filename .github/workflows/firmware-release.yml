@@ -33,6 +33,9 @@ jobs:
           v=$(git describe --tags --match 'firmware-v*' --exact-match)
           test "$v" = "$GITHUB_REF_NAME" || { echo "describe $v != $GITHUB_REF_NAME"; exit 1; }
 
+      # No cache restore here: release images build from a clean state (ci.yml caches).
+      - name: No compiler cache in a release build
+        run: echo "DESKHUB_CCACHE=$RUNNER_TEMP/ccache-release" >> "$GITHUB_ENV"
       - name: Build (ESP-IDF 5.5.4 in Docker)
         run: firmware/build.sh ${{ matrix.variant }}
 

@@ -20,6 +20,8 @@ typedef struct {
     bool fahrenheit;
     bool h24;
     int screen_off_min;
+    // ssid/pass: the single network of older firmware and local builds; the board now joins
+    // the saved networks in wifi_store.h (this one is the first of them).
     // Wi-Fi and token are stored in NVS (not only compiled in): GitHub images will work.
     bool creds_in_nvs;
 } hub_cfg_t;
@@ -28,7 +30,7 @@ typedef struct {
 void hubcfg_load(void);
 const hub_cfg_t *hubcfg(void);
 
-// True when `token` is non-empty and equals the board's token.
+// True when `token` is non-empty and equals the board's token (dashes don't count).
 bool hubcfg_token_ok(const char *token);
 
 // "s3", "p4rev1", "p4rev3" (build.sh) or "unknown": picks the release image.
