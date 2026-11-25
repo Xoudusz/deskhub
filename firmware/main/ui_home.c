@@ -129,12 +129,22 @@ static int time_colons(void)
     return n ? n : 1;
 }
 
-// Seconds on the Home clock (layout message "seconds"); the next tick re-lays it out.
+// Seconds on the Home clock (layout message "seconds"). Kept in NVS ("secs") so the clock
+// has them from boot, before the app connects; a change shows at once, not on the next tick.
 static bool s_seconds;
+static bool s_home_built;
 
 void ui_set_clock_seconds(bool on)
 {
+    if (on == s_seconds) return;  // the app sends the layout on every connect
     s_seconds = on;
+    nvs_handle_t h;
+    if (nvs_open("hub", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "secs", on);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    if (s_home_built) home_tick();
 }
 
 // The largest clock size, lowered to 128 px if a bigger font can't be created.
@@ -1038,6 +1048,8 @@ void home_create(lv_obj_t *page)
         size_t len = sizeof(s_spec);
         char buf[sizeof(s_spec)];
         if (nvs_get_str(h, "home", buf, &len) == ESP_OK) strlcpy(s_spec, buf, sizeof(s_spec));
+        uint8_t secs;
+        if (nvs_get_u8(h, "secs", &secs) == ESP_OK) s_seconds = secs != 0;
         nvs_close(h);
     }
     create_clock(page);
@@ -1061,6 +1073,7 @@ void home_create(lv_obj_t *page)
     home_refresh_game();
     home_refresh_net();
     home_refresh_github();
+    s_home_built = true;
 }
 
 // ---- refresh --------------------------------------------------------------
