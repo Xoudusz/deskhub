@@ -21,6 +21,7 @@ The board runs custom firmware (ESP-IDF + LVGL). A small Python app on your Wind
 - [Features](#features)
 - [What you need](#what-you-need)
 - [Setup](#setup)
+  - [Quick start: desktop app](#quick-start-desktop-app)
   - [1. Install the tools](#1-install-the-tools)
   - [2. Get the code](#2-get-the-code)
   - [3. Run setup](#3-run-setup)
@@ -77,6 +78,23 @@ Home is a 5 × 3 grid you arrange yourself, with widgets in the sizes you choose
 - A **2.4 GHz** Wi-Fi network. The ESP32-S3 can't join 5 GHz networks.
 
 ## Setup
+
+### Quick start: desktop app
+
+No toolchain needed. Firmware releases from 0.9.1 on include a full flash image per board; for older releases, build from source (steps 1 to 3 below).
+
+1. Install the desktop app: download `DeskHub_<version>_x64-setup.exe` from the newest `desktop-vX.Y.Z` [release](https://github.com/Xoudusz/deskhub/releases) and run it.
+2. Flash the board once. From the newest `firmware-vX.Y.Z` release, download `deskhub-<variant>-merged.bin`: `s3` for the 4.3B, `p4rev1` or `p4rev3` for the P4 (see [ESP32-P4 board](#esp32-p4-board) to read the chip revision). Plug the board in (4.3B: the **USB** port; P4: **USB TO UART**) and write the image at address 0:
+
+   ```powershell
+   uvx esptool --chip esp32s3 -p COM5 write_flash 0x0 deskhub-s3-merged.bin
+   ```
+
+   Use `--chip esp32p4` for the P4, and your board's port (Device Manager lists it under *Ports*). This erases the board's saved Wi-Fi and token, so use it for a new board only; later updates go over Wi-Fi from the app.
+3. In the app: Connection > USB setup > **Find board**, pick your Wi-Fi network and press **Set up Wi-Fi** (see [Setup with a USB cable](#updating-the-firmware)). The app saves the board's token and connects.
+4. Later, on another PC or after a token change, use Connection > Board > **Pair with the board** over Wi-Fi.
+
+The rest of this section builds the firmware yourself and runs the older Python companion.
 
 ### 1. Install the tools
 
