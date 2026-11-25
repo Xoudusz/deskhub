@@ -2,7 +2,8 @@
 # sdkconfig.local (no Wi-Fi, token or location inside: boards keep theirs in NVS), uploads
 # deskhub-<variant>.bin and firmware.json {version, assets: {variant: {url, sha256, size}}} to
 # release "firmware-vX.Y.Z", and copies firmware.json to the fixed release "firmware-latest",
-# which the desktop app reads (desktop/crates/core/src/firmware.rs).
+# which the desktop app reads (desktop/crates/core/src/firmware.rs). Also uploads the merged
+# images deskhub-<variant>-merged.bin (flash at 0x0 over USB) for a board's first flash.
 name: Firmware release
 
 on:
@@ -49,11 +50,14 @@ jobs:
           # The token stays the public Kconfig default; without an SSID the board ignores it.
           grep -q '^CONFIG_HUB_TOKEN="change-me"$' "$cfg" || { echo "token set"; exit 1; }
           cp "$bin" deskhub-${{ matrix.variant }}.bin
+          cp firmware/out/${{ matrix.variant }}/deskhub-merged.bin deskhub-${{ matrix.variant }}-merged.bin
 
       - uses: actions/upload-artifact@v4
         with:
           name: deskhub-${{ matrix.variant }}
-          path: deskhub-${{ matrix.variant }}.bin
+          path: |
+            deskhub-${{ matrix.variant }}.bin
+            deskhub-${{ matrix.variant }}-merged.bin
 
   publish:
     needs: build
@@ -94,8 +98,9 @@ jobs:
           R="--repo $GITHUB_REPOSITORY"
           gh release view "$TAG" $R >/dev/null 2>&1 || \
             gh release create "$TAG" $R --title "Desk Hub firmware ${TAG#firmware-}" --latest=false \
-              --notes "Board firmware ${TAG#firmware-}. The desktop app installs it (Connection > Firmware). Boards need one local build first (firmware/build.sh with sdkconfig.local) to store Wi-Fi and token."
-          gh release upload "$TAG" $R deskhub-s3.bin deskhub-p4rev1.bin deskhub-p4rev3.bin firmware.json --clobber
+              --notes "Board firmware ${TAG#firmware-}. The desktop app installs it (Connection > Firmware). New board: write deskhub-<variant>-merged.bin once at 0x0 over USB (erases saved Wi-Fi and token), then desktop app Connection > USB setup."
+          gh release upload "$TAG" $R deskhub-s3.bin deskhub-p4rev1.bin deskhub-p4rev3.bin firmware.json \
+            deskhub-s3-merged.bin deskhub-p4rev1-merged.bin deskhub-p4rev3-merged.bin --clobber
           # Only a newer release moves firmware-latest (re-tagging an old version must not roll apps back).
           mkdir -p current
           if gh release download firmware-latest $R --pattern firmware.json --dir current 2>/dev/null; then
