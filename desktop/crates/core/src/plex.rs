@@ -59,19 +59,27 @@ fn plex_headers(rb: reqwest::RequestBuilder, client_id: &str) -> reqwest::Reques
 
 /// Body of a successful reply, capped; errors carry the status but never the URL (it can
 /// hold a token).
-async fn read_ok(resp: reqwest::Response) -> Result<Vec<u8>> {
+async fn read_ok(mut resp: reqwest::Response) -> Result<Vec<u8>> {
     let status = resp.status();
     if !status.is_success() {
         bail!("HTTP {}", status.as_u16());
     }
-    let body = resp
-        .bytes()
-        .await
-        .map_err(|e| anyhow!("reading the reply: {}", e.without_url()))?;
-    if body.len() > MAX_BODY {
+    if resp.content_length().is_some_and(|n| n > MAX_BODY as u64) {
         bail!("reply too large");
     }
-    Ok(body.to_vec())
+    // Read in chunks and stop at the cap (a missing or wrong length can't grow memory).
+    let mut body = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| anyhow!("reading the reply: {}", e.without_url()))?
+    {
+        if body.len() + chunk.len() > MAX_BODY {
+            bail!("reply too large");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 async fn json_ok(resp: reqwest::Response) -> Result<Value> {
@@ -242,15 +250,15 @@ impl std::fmt::Debug for Conn {
     }
 }
 
-/// Picks how to reach `res` from this PC: its local HTTPS plex.direct address when
-/// `https` is available (Windows builds), else plain HTTP on its LAN address. Relayed and
-/// remote addresses are never used: the board and the server share a LAN.
-pub fn pick_connection(res: &Resource, account_token: &str, client_id: &str, https: bool) -> Result<Conn> {
-    let token = if res.access_token.is_empty() {
-        account_token.to_string()
-    } else {
-        res.access_token.clone()
-    };
+/// Picks how to reach `res` from this PC: its local HTTPS plex.direct address on builds
+/// with TLS (Windows), never plain HTTP there. Builds without TLS (Linux, dev only) use
+/// plain HTTP on the LAN address. Relayed and remote addresses are never used: the board
+/// and the server share a LAN. Only the server's own token is sent, never the account's.
+pub fn pick_connection(res: &Resource, client_id: &str, https: bool) -> Result<Conn> {
+    if res.access_token.is_empty() {
+        bail!("plex.tv gave no access token for {}", res.name);
+    }
+    let token = res.access_token.clone();
     let local: Vec<&Connection> = res.connections.iter().filter(|c| c.local && !c.relay).collect();
     if https {
         for c in &local {
@@ -276,6 +284,7 @@ pub fn pick_connection(res: &Resource, account_token: &str, client_id: &str, htt
                 client_id: client_id.to_string(),
             });
         }
+        bail!("{} has no secure local address (turn on Secure connections in Plex)", res.name);
     }
     if let Some(c) = local.iter().find(|c| c.address.parse::<IpAddr>().is_ok()) {
         let host = match c.address.parse::<IpAddr>() {
@@ -628,7 +637,7 @@ pub(crate) mod tests {
             {"protocol": "https", "address": "192.168.68.103", "port": 32400,
              "uri": "https://192-168-68-103.abc.plex.direct:32400", "local": true}
         ]));
-        let c = pick_connection(&r, "acct", "cid", true).unwrap();
+        let c = pick_connection(&r, "cid", true).unwrap();
         assert_eq!(c.base, "https://192-168-68-103.abc.plex.direct:32400");
         assert_eq!(
             c.resolve,
@@ -637,7 +646,7 @@ pub(crate) mod tests {
         assert_eq!(c.token, "srv-token");
         assert!(!format!("{c:?}").contains("srv-token"));
         // Without TLS (Linux builds): plain HTTP on the LAN address.
-        let c = pick_connection(&r, "acct", "cid", false).unwrap();
+        let c = pick_connection(&r, "cid", false).unwrap();
         assert_eq!(c.base, "http://192.168.68.103:32400");
         assert_eq!(c.resolve, None);
     }
@@ -646,12 +655,16 @@ pub(crate) mod tests {
     fn connection_needs_a_local_address() {
         let r = resource(json!([{"protocol": "https", "address": "203.0.113.9", "port": 32400,
             "uri": "https://203-0-113-9.abc.plex.direct:32400", "local": false}]));
-        assert!(pick_connection(&r, "acct", "cid", true).is_err());
+        assert!(pick_connection(&r, "cid", true).is_err());
         let mut r = resource(json!([{"protocol": "http", "address": "192.168.1.5", "port": 32400,
             "uri": "http://192.168.1.5:32400", "local": true}]));
+        // TLS builds never fall back to plain HTTP.
+        assert!(pick_connection(&r, "cid", true).is_err());
+        let c = pick_connection(&r, "cid", false).unwrap();
+        assert_eq!((c.base.as_str(), c.token.as_str()), ("http://192.168.1.5:32400", "srv-token"));
+        // Never the account token: no server token, no connection.
         r.access_token.clear();
-        let c = pick_connection(&r, "acct", "cid", true).unwrap();
-        assert_eq!((c.base.as_str(), c.token.as_str()), ("http://192.168.1.5:32400", "acct"));
+        assert!(pick_connection(&r, "cid", false).is_err());
     }
 
     #[test]

@@ -31,7 +31,14 @@ pub fn not_configured() -> Value {
 /// Fits a cover inside a 2:3 poster on black (square album art gets bands), as an ARS1
 /// frame: the server's own cover slot, so it doesn't replace the PC's.
 pub fn poster_frame(art_id: u32, raw: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let img = image::load_from_memory(raw)?.to_rgb8();
+    // Limits: a small file can still claim a huge picture.
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(4096);
+    limits.max_image_height = Some(4096);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(raw)).with_guessed_format()?;
+    reader.limits(limits);
+    let img = reader.decode()?.to_rgb8();
     let (w, h) = (img.width(), img.height());
     anyhow::ensure!(w > 0 && h > 0, "empty cover image");
     // Shrink to fit, never enlarge (PIL thumbnail()).
@@ -260,7 +267,7 @@ async fn connect(cfg: &MediaServer, token: &str) -> anyhow::Result<Conn> {
         .iter()
         .find(|r| r.id == cfg.server_id)
         .ok_or_else(|| anyhow::anyhow!("the server is no longer on this Plex account"))?;
-    plex::pick_connection(res, token, &cfg.client_id, cfg!(windows))
+    plex::pick_connection(res, &cfg.client_id, cfg!(windows))
 }
 
 pub async fn run(mut ctx: Ctx) {
@@ -406,6 +413,7 @@ mod tests {
         assert_eq!(px(64, 96), 0xFFFF);
         assert_eq!(px(64, 20), 0);
         assert!(poster_frame(1, b"not an image").is_err());
+        assert!(poster_frame(1, &png(4097, 2)).is_err()); // over the size limit
     }
 
     #[test]
