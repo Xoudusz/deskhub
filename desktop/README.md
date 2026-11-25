@@ -109,7 +109,7 @@ The board token lives in Windows Credential Manager ("Desk Hub" / "board-token",
 
 The Plex collector asks plex.tv for the server's addresses and connects to its local HTTPS
 `*.plex.direct` address, pinned to the LAN IP (no DNS lookup, so DNS-rebind protection doesn't
-matter); without one, plain HTTP on the LAN IP. It polls `/status/sessions` every 3 s while
+matter), with the server's own token only. No plain-HTTP fallback (Linux dev builds, which lack TLS, use HTTP). It polls `/status/sessions` every 3 s while
 anything plays (15 s idle, 60 s after a failure) and sends `media_server` JSON plus an `ARS1`
 poster (128x192, letterboxed). Everyone on the server counts; one session shows, playing first
 and sticky, with "(+N more)". Read-only: no seek or play/pause.
