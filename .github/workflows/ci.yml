@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Branches only: a tag push runs the release workflows, which build the same thing.
   push:
+    branches: ["**"]
   pull_request:
 
 jobs:
@@ -16,6 +18,16 @@ jobs:
         variant: [s3, p4rev1, p4rev3]
     steps:
       - uses: actions/checkout@v4
+      # Compiler cache (firmware/build.sh mounts it) and downloaded components: most of
+      # the build time without them.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deskhub-ccache
+            firmware/managed_components
+          key: fw-${{ matrix.variant }}-idf5.5.4-${{ hashFiles('firmware/main/idf_component.yml') }}-${{ github.run_id }}
+          restore-keys: |
+            fw-${{ matrix.variant }}-idf5.5.4-${{ hashFiles('firmware/main/idf_component.yml') }}-
       - name: Build (ESP-IDF 5.5.4 in Docker)
         run: firmware/build.sh ${{ matrix.variant }}
       - uses: actions/upload-artifact@v4

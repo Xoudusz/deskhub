@@ -33,6 +33,16 @@ jobs:
           v=$(git describe --tags --match 'firmware-v*' --exact-match)
           test "$v" = "$GITHUB_REF_NAME" || { echo "describe $v != $GITHUB_REF_NAME"; exit 1; }
 
+      # Compiler cache (firmware/build.sh mounts it) and downloaded components: most of
+      # the build time without them.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deskhub-ccache
+            firmware/managed_components
+          key: fw-${{ matrix.variant }}-idf5.5.4-${{ hashFiles('firmware/main/idf_component.yml') }}-${{ github.run_id }}
+          restore-keys: |
+            fw-${{ matrix.variant }}-idf5.5.4-${{ hashFiles('firmware/main/idf_component.yml') }}-
       - name: Build (ESP-IDF 5.5.4 in Docker)
         run: firmware/build.sh ${{ matrix.variant }}
 

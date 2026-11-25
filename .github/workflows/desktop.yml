@@ -1,7 +1,9 @@
 name: Desktop app
 
 on:
+  # Branches only: a desktop-v tag runs desktop-release.yml instead.
   push:
+    branches: ["**"]
     paths: ["desktop/**", "firmware/main/**", "firmware/sim/**", ".github/workflows/desktop.yml"]
   pull_request:
     paths: ["desktop/**", "firmware/main/**", "firmware/sim/**", ".github/workflows/desktop.yml"]
