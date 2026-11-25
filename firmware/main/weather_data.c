@@ -18,7 +18,10 @@ void weather_build_url(char *out, size_t n)
              "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m"
              "&hourly=temperature_2m,weather_code,precipitation_probability"
              "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-             "&timezone=auto&timeformat=unixtime&forecast_days=6&forecast_hours=24%s",
+             "&timezone=auto&timeformat=unixtime&forecast_days=6&forecast_hours=24"
+             // One model everywhere: GeoSphere Austria C-LAEF (1 km) for 60 h, then ECMWF; outside
+             // C-LAEF's area ECMWF. Open-Meteo's default (ICON-D2 in Vienna) showed rain stations didn't.
+             "&models=geosphere_seamless%s",
              c->lat, c->lon,
              c->fahrenheit ? "&temperature_unit=fahrenheit&wind_speed_unit=mph" : "&wind_speed_unit=kmh");
 }
@@ -96,6 +99,15 @@ static int fill_array_t(const cJSON *arr, time_t *out, int max)
     return n;
 }
 
+// The weather code comes from the model run, the precipitation % from ensembles, so light amounts
+// can show a rain or snow icon at 0 %. Below 20 % the icon shows Overcast, matching the %.
+#define WEATHER_PRECIP_MIN_PCT 20
+
+static int weather_shown_code(int code, int precip_pct)
+{
+    return (code >= 51 && precip_pct < WEATHER_PRECIP_MIN_PCT) ? 3 : code;
+}
+
 static double jnum(const cJSON *o, const char *k)
 {
     const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, k);
@@ -129,6 +141,8 @@ bool weather_parse(const char *body, hub_weather_t *w)
         fill_array_f(cJSON_GetObjectItem(daily, "temperature_2m_min"), w->day_lo, HUB_DAYS);
         fill_array_i(cJSON_GetObjectItem(daily, "weather_code"), w->day_code, HUB_DAYS);
         fill_array_i(cJSON_GetObjectItem(daily, "precipitation_probability_max"), w->day_precip, HUB_DAYS);
+        for (int i = 0; i < HUB_HOURS; i++) w->hour_code[i] = weather_shown_code(w->hour_code[i], w->hour_precip[i]);
+        for (int i = 0; i < HUB_DAYS; i++) w->day_code[i] = weather_shown_code(w->day_code[i], w->day_precip[i]);
     }
     cJSON_Delete(root);
     return ok;

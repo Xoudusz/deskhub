@@ -53,7 +53,7 @@ The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windo
 | PC stats | CPU, GPU, RAM and VRAM gauges, GPU temperature, a one-minute history chart, network and disk | companion |
 | AI | Claude Code or Codex 5-hour and weekly limits with reset times, tokens today, a 7-day chart, usage per model | companion, from Claude Code or Codex |
 | Calendar | Up to 16 upcoming events, grouped by day, from the next 7 days or as many as you set | companion, from Google, Apple iCloud, Outlook or any ICS feed |
-| Weather | Current conditions, the next 24 hours and 6 days | the board itself, from [Open-Meteo](https://open-meteo.com) |
+| Weather | Current conditions, the next 24 hours and 6 days | the board itself, from [Open-Meteo](https://open-meteo.com) with the GeoSphere Austria model (ECMWF where it doesn't reach) |
 | Media | Whatever Windows lists as playing (Spotify, YouTube in a browser, VLC…) with the cover, a seek bar and controls | companion |
 | Shortcuts | Up to 16 buttons: key combos, apps, folders, URLs, volume, media, lock PC | companion |
 | 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion, over the local network (Bambu also through its cloud) |
