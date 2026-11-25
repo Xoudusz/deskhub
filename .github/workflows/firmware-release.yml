@@ -96,10 +96,19 @@ jobs:
         run: |
           cd out
           R="--repo $GITHUB_REPOSITORY"
-          gh release view "$TAG" $R >/dev/null 2>&1 || \
-            gh release create "$TAG" $R --title "Desk Hub firmware ${TAG#firmware-}" --latest=false \
-              --notes "Board firmware ${TAG#firmware-}. The desktop app installs it (Connection > Firmware). New board: write deskhub-<variant>-merged.bin once at 0x0 over USB (erases saved Wi-Fi and token), then desktop app Connection > USB setup."
-          gh release upload "$TAG" $R deskhub-s3.bin deskhub-p4rev1.bin deskhub-p4rev3.bin firmware.json \
+          # GitHub's API sometimes answers 5xx; try each call 3 times (30 s, then 60 s apart).
+          retry() {
+            for i in 1 2 3; do
+              "$@" && return 0
+              [ "$i" = 3 ] || { echo "try $i failed: $1 ${2:-}, again in $((i * 30)) s"; sleep $((i * 30)); }
+            done
+            return 1
+          }
+          # view first: a create that got a 5xx may still have made the release.
+          make_release() { gh release view "$1" $R >/dev/null 2>&1 || gh release create "$@" $R; }
+          retry make_release "$TAG" --title "Desk Hub firmware ${TAG#firmware-}" --latest=false \
+            --notes "Board firmware ${TAG#firmware-}. The desktop app installs it (Connection > Firmware). New board: write deskhub-<variant>-merged.bin once at 0x0 over USB (erases saved Wi-Fi and token), then desktop app Connection > USB setup."
+          retry gh release upload "$TAG" $R deskhub-s3.bin deskhub-p4rev1.bin deskhub-p4rev3.bin firmware.json \
             deskhub-s3-merged.bin deskhub-p4rev1-merged.bin deskhub-p4rev3-merged.bin --clobber
           # Only a newer release moves firmware-latest (re-tagging an old version must not roll apps back).
           mkdir -p current
@@ -111,7 +120,6 @@ jobs:
           print("yes" if v(os.environ["TAG"]) > v(cur) else "no")')
             if [ "$newer" != yes ]; then echo "firmware-latest stays (not newer)"; exit 0; fi
           fi
-          gh release view firmware-latest $R >/dev/null 2>&1 || \
-            gh release create firmware-latest $R --title "Desk Hub firmware updater" --latest=false \
-              --notes "firmware.json for the desktop app. Images are in the newest firmware-v release."
-          gh release upload firmware-latest $R firmware.json --clobber
+          retry make_release firmware-latest --title "Desk Hub firmware updater" --latest=false \
+            --notes "firmware.json for the desktop app. Images are in the newest firmware-v release."
+          retry gh release upload firmware-latest $R firmware.json --clobber

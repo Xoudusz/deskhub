@@ -4,7 +4,7 @@ A desk display for the **Waveshare ESP32-S3-Touch-LCD-4.3B**. It shows the time,
 
 https://github.com/user-attachments/assets/2b18951c-0adb-42aa-9e92-08439c5763bc
 
-The board runs custom firmware (ESP-IDF + LVGL). A small Python app on your Windows PC, the *companion*, sends it PC data over your Wi-Fi. The clock and weather keep working when the PC is off.
+The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windows PC (`desktop/`) sends it PC data over your Wi-Fi; the older Python *companion* (`companion/`) still works too. The clock and weather keep working when the PC is off.
 
 | | |
 | --- | --- |
@@ -81,7 +81,7 @@ Home is a 5 × 3 grid you arrange yourself, with widgets in the sizes you choose
 
 ### Quick start: desktop app
 
-No toolchain needed. Firmware releases from 0.9.1 on include a full flash image per board; for older releases, build from source (steps 1 to 3 below).
+No build toolchain needed, only **uv**, which runs esptool (install it with the PowerShell line in [1. Install the tools](#1-install-the-tools)). Firmware releases from 0.9.1 on include a full flash image per board; for older releases, build from source (steps 1 to 3 below).
 
 1. Install the desktop app: download `DeskHub_<version>_x64-setup.exe` from the newest `desktop-vX.Y.Z` [release](https://github.com/Xoudusz/deskhub/releases) and run it.
 2. Flash the board once. From the newest `firmware-vX.Y.Z` release, download `deskhub-<variant>-merged.bin`: `s3` for the 4.3B, `p4rev1` or `p4rev3` for the P4 (see [ESP32-P4 board](#esp32-p4-board) to read the chip revision). Plug the board in (4.3B: the **USB** port; P4: **USB TO UART**) and write the image at address 0:
