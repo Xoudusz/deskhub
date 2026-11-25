@@ -8,7 +8,7 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 import { mountSim, onSimState, simState } from "./sim";
@@ -697,9 +697,108 @@ function connectionHtml(): string {
       `<input class="txt" type="${showToken ? "text" : "password"}" data-k="token" value="${esc(S.board.token)}" autocomplete="off" spellcheck="false">` +
       `<button type="button" class="ib" data-act="eye" title="${showToken ? "Hide" : "Show"} token">${icon(showToken ? "eye-off" : "eye", 14)}</button>`,
       "Must match the token on the board"),
+    row("Pair", `<button type="button" data-act="pair"${pairCode ? " disabled" : ""}>${icon("zap", 13)}Pair with the board</button>`,
+      pairCode ? "" : "Gets the token from the board: you tap Allow on it"),
+    ...(pairCode ? [row("Code", `<span class="paircode">${esc(pairCode)}</span>`,
+      "Tap Allow on the board if it shows this same code (within a minute)")] : []),
+    ...(pairNote ? [text(pairNote)] : []),
     row("Config file", `<button type="button" data-act="import">${icon("refresh-cw", 13)}Import from config.toml</button>`,
       S.imported ? "Already imported" : "Copies host and token from the Python companion's config"),
-  ].join("")) + firmwareHtml();
+  ].join("")) + usbHtml() + firmwareHtml();
+}
+
+// Pairing (Board card): the code shown while the board's prompt is open.
+let pairCode = "";
+let pairNote = "";
+
+async function pair() {
+  pairNote = "";
+  try {
+    pairCode = await api.boardPairCode();
+    render(true);
+    await api.boardPair(pairCode);
+    pairNote = "Paired. The token is saved.";
+  } catch (err) {
+    pairNote = `Not paired: ${String(err).replace(/^Error: /, "")}`;
+  }
+  pairCode = "";
+  render(true);
+}
+
+// First setup over the USB cable (USB setup card).
+let usbBoard: UsbBoard | null = null;
+let usbNets: UsbNetwork[] = [];
+let usbSsid = "";
+let usbBusy = "";
+let usbNote = "";
+
+function usbHtml(): string {
+  const b = usbBoard;
+  const rows = [
+    row("Board on USB",
+      `<button type="button" data-act="usb-find"${usbBusy ? " disabled" : ""}>${icon("refresh-cw", 13)}${b ? "Find again" : "Find board"}</button>`,
+      usbBusy === "find" ? "Looking on the USB ports..."
+        : b ? esc(`${b.port}: ${b.version}${b.variant ? ` (${b.variant})` : ""}. ${b.token_saved ? "Token saved." : "The board has no token yet."}`)
+        : "Plug the board into this PC with a USB data cable"),
+  ];
+  if (b) {
+    rows.push(row("Wi-Fi now", `<span>${esc(b.ssid ? `${b.ssid}${b.ip ? ` (${b.ip})` : ""}` : "Not connected")}</span>`));
+    const opts: [string, string][] = usbNets.map(n => [n.ssid, `${n.ssid}${n.secure ? "" : " (open)"}`]);
+    rows.push(row("Network",
+      (opts.length ? select(`data-k="usbSsid"`, opts, usbSsid, !!usbBusy) : `<span class="muted">${usbBusy === "scan" ? "Scanning..." : "No networks yet"}</span>`) +
+      `<button type="button" class="ib" data-act="usb-scan" title="Scan again"${usbBusy ? " disabled" : ""}>${icon("refresh-cw", 13)}</button>`,
+      "Networks the board sees"));
+    rows.push(row("Password",
+      `<input class="txt" type="password" data-k="usbPass" autocomplete="off" spellcheck="false" placeholder="Empty for an open network"${usbBusy ? " disabled" : ""}>`));
+    rows.push(row("", `<button type="button" data-act="usb-wifi"${usbBusy || !usbSsid ? " disabled" : ""}>Set up Wi-Fi</button>`,
+      usbBusy === "wifi" ? "Joining (up to 40 seconds)..." : "The board saves the network and joins it"));
+  }
+  if (usbNote) rows.push(text(usbNote));
+  return card("USB setup", "First setup with a cable: no typing on the board", rows.join(""));
+}
+
+async function usbRun(kind: string, job: () => Promise<void>) {
+  usbBusy = kind;
+  usbNote = "";
+  render(true);
+  try {
+    await job();
+  } catch (err) {
+    usbNote = String(err).replace(/^Error: /, "");
+  }
+  usbBusy = "";
+  render(true);
+}
+
+const usbScan = () => usbRun("scan", async () => {
+  if (!usbBoard) return;
+  usbNets = await api.usbScan(usbBoard.port);
+  if (!usbNets.some(n => n.ssid === usbSsid)) usbSsid = usbNets[0]?.ssid ?? "";
+});
+
+function usbFind() {
+  void usbRun("find", async () => {
+    usbBoard = null;
+    usbNets = [];
+    usbBoard = await api.usbFind();
+  }).then(() => { if (usbBoard) void usbScan(); });
+}
+
+function usbWifi() {
+  const board = usbBoard;
+  const pass = main.querySelector<HTMLInputElement>('[data-k="usbPass"]')?.value ?? "";
+  if (!board || !usbSsid) return;
+  if (pass && (pass.length < 8 || pass.length > 64)) {
+    usbNote = "Wi-Fi passwords have 8 to 64 characters (or none for an open network).";
+    render(true);
+    return;
+  }
+  void usbRun("wifi", async () => {
+    const j = await api.usbWifi(board.port, usbSsid, pass);
+    board.ssid = usbSsid;
+    board.ip = j.ip;
+    usbNote = `Connected to ${usbSsid}${j.ip ? ` as ${j.ip}` : ""}. Desk Hub finds the board there now.`;
+  });
 }
 
 function firmwareHtml(): string {
@@ -863,6 +962,10 @@ async function act(el: HTMLElement) {
     case "import": await importConfig(); return;
     case "update-check": checkUpdates(); return;
     case "firmware": await updateFirmware(); return;
+    case "pair": await pair(); return;
+    case "usb-find": usbFind(); return;
+    case "usb-scan": void usbScan(); return;
+    case "usb-wifi": usbWifi(); return;
     case "firmware-github": await updateFirmware(true); return;
     case "fw-recheck": render(true); await refreshFwCheck(); return;
     case "game-image": {
@@ -951,6 +1054,8 @@ main.addEventListener("change", e => {
     case "token":
       void save({ board: { token: t.value } });
       return;
+    case "usbSsid": usbSsid = t.value; render(true); return;
+    case "usbPass": return;
     case "pageOn": {
       const p = t.dataset.page as Page;
       const list = onList();

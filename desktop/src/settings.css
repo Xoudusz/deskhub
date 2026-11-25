@@ -126,3 +126,6 @@ input.color { width: 44px; height: 28px; padding: 0; border: 1px solid var(--lin
   background: rgba(var(--acc-rgb), .18); color: var(--fg); font-size: .72rem; cursor: pointer; }
 .upd[hidden] { display: none; }
 .upd:disabled { opacity: .6; cursor: default; }
+
+/* Pairing code (Connection, Board card). */
+.paircode { font: 600 1.4rem "IBM Plex Mono", monospace; letter-spacing: .3em; color: var(--accent); }

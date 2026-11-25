@@ -50,6 +50,10 @@ export type Status = {
 
 /** Firmware card: newest GitHub release and whether this board can and should take it. */
 export type FirmwareCheck = { latest: string | null; update_available: boolean; blocked: string | null; error: string | null };
+/** A board found on USB (its token is saved by the backend, never sent here). */
+export type UsbBoard = { port: string; version: string; variant: string; ssid: string; ip: string; saved: number; token_saved: boolean };
+export type UsbNetwork = { ssid: string; rssi: number; secure: boolean };
+export type UsbJoined = { ip: string; host: string };
 
 export type SettingsPatch = { [K in keyof Settings]?: Partial<Settings[K]> };
 
@@ -272,6 +276,39 @@ export const api = {
     if (TAURI) return invoke<string>("board_firmware", { path: path ?? null });
     await new Promise(r => setTimeout(r, 1500));
     return "installed; restarting";
+  },
+  /** Find the board on USB; saves its token and host. */
+  usbFind: async (): Promise<UsbBoard> => {
+    if (TAURI) return invoke<UsbBoard>("usb_find");
+    await new Promise(r => setTimeout(r, 800));
+    mockMerge({ board: { host: "deskhub.local", token: "mock-token-from-usb" } });
+    return { port: "COM3", version: "firmware-v0.9.0", variant: "p4rev1", ssid: "", ip: "", saved: 0, token_saved: true };
+  },
+  /** Networks the board on `port` sees. */
+  usbScan: async (port: string): Promise<UsbNetwork[]> => {
+    if (TAURI) return invoke<UsbNetwork[]>("usb_scan", { port });
+    await new Promise(r => setTimeout(r, 1200));
+    return [
+      { ssid: "Home Wi-Fi", rssi: -42, secure: true },
+      { ssid: "Office", rssi: -61, secure: true },
+      { ssid: "Cafe Guest", rssi: -79, secure: false },
+    ];
+  },
+  /** Join and save a network on the board; resolves with its address. */
+  usbWifi: async (port: string, ssid: string, pass: string): Promise<UsbJoined> => {
+    if (TAURI) return invoke<UsbJoined>("usb_wifi", { port, ssid, pass });
+    await new Promise(r => setTimeout(r, 1500));
+    if (pass.startsWith("wrong")) throw new Error("couldn't join: check the password and that the network is in range");
+    return { ip: "192.168.1.50", host: "deskhub" };
+  },
+  /** A fresh 4-digit code for the board's pairing prompt. */
+  boardPairCode: (): Promise<string> =>
+    TAURI ? invoke<string>("board_pair_code") : Promise.resolve(String(Math.floor(Math.random() * 10000)).padStart(4, "0")),
+  /** Ask the board for its token (it shows `code`, the user taps Allow); saves it. */
+  boardPair: async (code: string): Promise<void> => {
+    if (TAURI) return invoke<void>("board_pair", { code });
+    await new Promise(r => setTimeout(r, 2500));
+    mockMerge({ board: { token: "mock-token-from-pair" } });
   },
   /** Start with Windows; the setter returns the state Windows reports afterwards. */
   autostartGet: (): Promise<boolean> => (TAURI ? invoke<boolean>("autostart_get") : Promise.resolve(mockAutostart)),

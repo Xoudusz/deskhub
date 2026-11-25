@@ -28,6 +28,11 @@ Commands (`invoke`):
 | `autostart_get` / `autostart_set` | – / `{ on: boolean }` | `boolean`: Start with Windows (enabled on first run) |
 | `firmware_check` | – | `{ latest: string \| null, update_available: boolean, blocked: string \| null, error: string \| null }`: newest `firmware-latest/firmware.json` release for the connected board |
 | `board_firmware_github` | – | `string`: downloads the release image for the board's variant, checks sha256 and size, sends it (`POST /firmware`, the board asks first). Refused unless the board reports `creds: "nvs"` and a known variant |
+| `usb_find` | – | `{ port, version, variant, ssid, ip, saved, token_saved }`: the first USB serial port (VID 303A / 1A86 / 10C4) whose board answers `info`; saves the board's token and `<host>.local`. Never returns the token. Windows only. The port is opened with DTR/RTS off (serialport's default DCB): a port opened with them on hung the P4 board until replugged |
+| `usb_scan` | `{ port: string }` | `{ ssid, rssi, secure }[]`: networks the board sees |
+| `usb_wifi` | `{ port: string, ssid: string, pass: string }` | `{ ip, host }`: the board joined and saved the network (saves `<host>.local`); errors name the cause, never the password |
+| `board_pair_code` | – | `string`: a random 4-digit code |
+| `board_pair` | `{ code: string }` | `null`: `POST /pair` to the board with the computer name and code; saves the token on Allow, explains Deny / no answer / cooldown / old firmware |
 | `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):

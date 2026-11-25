@@ -30,6 +30,8 @@ sha2 = "0.10"
 
 # Windows-only collectors (media session, PDH GPU counters, power events, input, audio).
 [target.'cfg(windows)'.dependencies]
+# First setup over the USB cable (usb.rs). No libudev: Windows only.
+serialport = { version = "4.10", default-features = false }
 # The board token in Windows Credential Manager (secrets.rs).
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 # https for Steam CDN art and image URLs (schannel, no C compiler needed).

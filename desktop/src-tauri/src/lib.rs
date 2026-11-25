@@ -12,6 +12,7 @@ use deskhub_core::http;
 use deskhub_core::secrets::{self, SecretStore};
 use deskhub_core::session::{Service, ServiceHandle};
 use deskhub_core::settings::{find_config, import_config_file, Settings, State, Status};
+use deskhub_core::usb;
 use serde_json::Value;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -242,6 +243,124 @@ async fn board_tap(state: tauri::State<'_, App>, x: i64, y: i64) -> Result<(), S
     http::tap(&s.board.host, &s.board.token, x, y)
         .await
         .map_err(|e| format!("{e:#}"))
+}
+
+// ---- first setup: USB cable and pairing ---------------------------------------
+
+/// One USB command at a time (the port can be opened once).
+static USB: Mutex<()> = Mutex::new(());
+
+/// What the USB setup card shows. The token is saved, never sent to the page.
+#[derive(serde::Serialize)]
+struct UsbBoard {
+    port: String,
+    version: String,
+    variant: String,
+    ssid: String,
+    ip: String,
+    saved: u32,
+    /// The board gave a token and it is saved.
+    token_saved: bool,
+}
+
+/// Run a USB job off the async runtime (serial reads block).
+async fn usb_job<T: Send + 'static>(
+    job: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _one = USB.lock().unwrap_or_else(|e| e.into_inner());
+        job()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))
+}
+
+/// Board name on the network as the app's host setting: "deskhub" -> "deskhub.local".
+fn mdns_host(host: &str) -> Option<String> {
+    let h = host.trim();
+    if h.is_empty() {
+        None
+    } else if h.contains('.') {
+        Some(h.to_string())
+    } else {
+        Some(format!("{h}.local"))
+    }
+}
+
+/// Save the board's token (and host when it has one).
+fn save_board(app: &AppHandle, state: &App, token: &str, host: &str) -> Result<(), String> {
+    let mut next = state.settings();
+    next.board.token = token.to_string();
+    if let Some(h) = mdns_host(host) {
+        next.board.host = h;
+    }
+    state.apply(app, next).map(|_| ())
+}
+
+/// Find the board on a USB port, read its info and save its token and host.
+#[tauri::command]
+async fn usb_find(app: AppHandle, state: tauri::State<'_, App>) -> Result<UsbBoard, String> {
+    let (port, info) = usb_job(|| usb::find_board().map(|(port, _link, info)| (port, info))).await?;
+    let token_saved = !info.token.is_empty();
+    if token_saved {
+        save_board(&app, &state, &info.token, &info.host)?;
+    }
+    Ok(UsbBoard {
+        port,
+        version: info.version,
+        variant: info.variant,
+        ssid: info.ssid,
+        ip: info.ip,
+        saved: info.saved,
+        token_saved,
+    })
+}
+
+/// Networks the board sees.
+#[tauri::command]
+async fn usb_scan(port: String) -> Result<Vec<usb::Network>, String> {
+    usb_job(move || usb::open(&port)?.scan()).await
+}
+
+/// Join and save a network on the board; save the host it answers with.
+#[tauri::command]
+async fn usb_wifi(
+    app: AppHandle,
+    state: tauri::State<'_, App>,
+    port: String,
+    ssid: String,
+    pass: String,
+) -> Result<usb::Joined, String> {
+    let joined = usb_job(move || usb::open(&port)?.wifi(&ssid, &pass)).await?;
+    if let Some(h) = mdns_host(&joined.host) {
+        let mut next = state.settings();
+        next.board.host = h;
+        state.apply(&app, next)?;
+    }
+    Ok(joined)
+}
+
+/// A fresh 4-digit code for the pairing prompt (shown here and on the board).
+#[tauri::command]
+fn board_pair_code() -> String {
+    http::pair_code()
+}
+
+/// Ask the board for its token: it shows the code and waits a minute for Allow.
+#[tauri::command]
+async fn board_pair(
+    app: AppHandle,
+    state: tauri::State<'_, App>,
+    code: String,
+) -> Result<(), String> {
+    let host = state.settings().board.host;
+    let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "this PC".into());
+    let paired = http::pair(&host, &name, &code)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    // Keep the host that just worked (it may be an IP address); only the token changes.
+    save_board(&app, &state, &paired.token, "")
 }
 
 #[tauri::command]
@@ -510,6 +629,11 @@ pub fn run() {
             autostart_set,
             board_firmware_github,
             import_config,
+            usb_find,
+            usb_scan,
+            usb_wifi,
+            board_pair_code,
+            board_pair,
             claude_status,
             claude_connect,
             updates::update_status,
