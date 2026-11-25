@@ -185,6 +185,12 @@ static void peer_ip(httpd_req_t *req, char *out, size_t n)
 
 static esp_err_t pair_handler(httpd_req_t *req)
 {
+    // Browsers send Origin on every POST; the desktop app never does. Refusing it keeps web
+    // pages (DNS rebinding included) from asking for the token through the user's browser.
+    if (httpd_req_get_hdr_value_len(req, "Origin") > 0) {
+        send_status(req, "403 Forbidden", "pairing from a web page is not allowed");
+        return ESP_OK;
+    }
     if (s_busy) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "a pairing prompt is already open");
     if (s_denied_at && esp_timer_get_time() - s_denied_at < COOLDOWN_US) {
         send_status(req, "429 Too Many Requests", "denied a moment ago; try again shortly");

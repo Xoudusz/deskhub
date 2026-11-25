@@ -749,7 +749,7 @@ The board also serves a few HTTP endpoints, all of which need the token as `?tok
 | Endpoint | What it does |
 | --- | --- |
 | `POST /firmware` | Takes a new firmware image. The board asks on screen before installing it (see [Updating the firmware](#updating-the-firmware)). |
-| `POST /pair?name=<PC>&code=<4-6 digits>` | No token. The board shows **Pair with <PC>?** with the code and the asking address; **Allow** answers `{"token", "host"}`, **Deny** 403, no answer within a minute 408, a request within 10 s of those 429, a second request while one is open 400, a board without a token 503. |
+| `POST /pair?name=<PC>&code=<4-6 digits>` | No token. The board shows **Pair with <PC>?** with the code and the asking address; **Allow** answers `{"token", "host"}`, **Deny** 403, no answer within a minute 408, a request within 10 s of those 429, a second request while one is open 400, a board without a token 503. Requests with an `Origin` header (web pages) get 403. |
 | `GET /screenshot` | The current screen as a BMP. |
 | `GET /tap?x=…&y=…` | Taps the screen at that point. |
 | `GET /perf` | Rendering stats as JSON (frames per second, frame times). `&full=1` also times a full-screen redraw. |
