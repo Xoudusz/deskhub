@@ -1,6 +1,6 @@
 [package]
 name = "deskhub-desktop"
-version = "0.6.0"
+version = "0.6.1"
 description = "Desk Hub desktop app"
 edition = "2021"
 publish = false
