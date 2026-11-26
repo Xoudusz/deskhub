@@ -197,6 +197,14 @@ pub fn apply(
             _ => Ok(()),
         };
     }
+    // Claude Code's "waiting for your input" notice comes after a minute of quiet even
+    // while the session's own background jobs (a build, CI) still run: not waiting yet.
+    if event == "Notification"
+        && text(data.get("notification_type")) == "idle_prompt"
+        && read_record(&path).is_some_and(|o| o["state"] == "working" && o["bg"] == true)
+    {
+        return Ok(());
+    }
     let Some(mut rec) = record(event, data, now, pids) else {
         return Ok(());
     };
@@ -223,6 +231,7 @@ pub fn record(
     pids: impl FnOnce() -> Vec<u32>,
 ) -> Option<Value> {
     let mut extra = None;
+    let mut bg = false;
     let (state, message): (&str, String) = match event {
         "Notification" => {
             let kind = text(data.get("notification_type"));
@@ -253,6 +262,7 @@ pub fn record(
             .and_then(Value::as_array)
             .is_some_and(|t| !t.is_empty()) =>
         {
+            bg = true;
             ("working", String::new())
         }
         "Stop" => match asks_back(&text(data.get("last_assistant_message"))) {
@@ -274,6 +284,9 @@ pub fn record(
     if let Some((request, detail)) = extra {
         rec["request"] = json!(request);
         rec["detail"] = json!(detail);
+    }
+    if bg {
+        rec["bg"] = json!(true);
     }
     Some(rec)
 }
@@ -419,6 +432,31 @@ mod tests {
         assert_eq!(record("Stop", &bg, 1, Vec::new).unwrap()["state"], "working");
         let idle = json!({"last_assistant_message": "Done.", "background_tasks": []});
         assert_eq!(record("Stop", &idle, 1, Vec::new).unwrap()["state"], "idle");
+    }
+
+    #[test]
+    fn idle_notice_is_ignored_while_background_jobs_run() {
+        let dir = store::temp_dir("hook-bg");
+        let sessions = dir.join("claude_sessions");
+        let file = sessions.join("s1.json");
+        let stop = json!({"session_id": "s1", "last_assistant_message": "Watching CI.", "background_tasks": [{"id": "b1"}]});
+        apply(&sessions, "Stop", &stop, 1, Vec::new).unwrap();
+        assert_eq!(read_record(&file).unwrap()["bg"], true);
+        let idle = json!({"session_id": "s1", "notification_type": "idle_prompt", "message": "Claude is waiting for your input"});
+        apply(&sessions, "Notification", &idle, 70, Vec::new).unwrap();
+        let rec = read_record(&file).unwrap();
+        assert_eq!((rec["state"].clone(), rec["updated"].clone()), (json!("working"), json!(1)));
+        // A permission prompt still alerts.
+        let perm = json!({"session_id": "s1", "notification_type": "permission_prompt", "message": "m"});
+        apply(&sessions, "Notification", &perm, 71, Vec::new).unwrap();
+        assert_eq!(read_record(&file).unwrap()["state"], "permission");
+        // Without background jobs the idle notice alerts as before.
+        let done = json!({"session_id": "s1", "last_assistant_message": "Done.", "background_tasks": []});
+        apply(&sessions, "Stop", &done, 80, Vec::new).unwrap();
+        assert!(read_record(&file).unwrap().get("bg").is_none());
+        apply(&sessions, "Notification", &idle, 140, Vec::new).unwrap();
+        assert_eq!(read_record(&file).unwrap()["state"], "input");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
