@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
 use super::Ctx;
+use super::remote;
 use crate::protocol::Incoming;
 
 /// Publish key for the board's alert panel.
@@ -37,6 +38,10 @@ pub struct Session {
     pub pids: Vec<u32>,
     /// The server it runs on ("" = this PC). Server sessions have no window to show.
     pub host: String,
+    /// A pending permission request's id ("" = none); the board's Allow / Deny names it.
+    pub request: String,
+    /// What the permission request asks for ("Bash: npm test"), "" when unknown.
+    pub detail: String,
 }
 
 /// The alert shown on the board.
@@ -49,6 +54,8 @@ pub struct Alert {
     pub project: String,
     /// The board may offer Show (the session has a window on this PC).
     pub focus: bool,
+    /// The board may offer Allow / Deny (a server's pending permission request).
+    pub decide: bool,
 }
 
 impl Alert {
@@ -64,6 +71,9 @@ impl Alert {
         });
         if !self.focus {
             v["focus"] = json!(false);
+        }
+        if self.decide {
+            v["decide"] = json!(true);
         }
         v
     }
@@ -108,6 +118,8 @@ pub fn parse_session(text: &str) -> Option<Session> {
         updated,
         pids,
         host: String::new(),
+        request: str_of("request"),
+        detail: str_of("detail"),
     })
 }
 
@@ -194,6 +206,11 @@ pub fn pick(
     } else {
         (generic, "Finished. Waiting for your reply")
     };
+    // What a permission request asks for ("Bash: npm test"), when the hook sent it.
+    let detail = match d.detail.trim() {
+        asked if permission && !asked.is_empty() => asked,
+        _ => detail,
+    };
     // A server's session says where it runs: "vibecode - deskhub".
     let project = if d.host.is_empty() {
         d.project.clone()
@@ -209,6 +226,7 @@ pub fn pick(
         detail: ascii_fold(detail, 120),
         project: ascii_fold(&project, 40),
         focus: d.host.is_empty(),
+        decide: permission && !d.host.is_empty() && !d.request.is_empty(),
     })
 }
 
@@ -312,6 +330,14 @@ impl Tracker {
     /// Whether `sid` is a server's session (nothing to show on this PC).
     pub fn is_remote(&self, sid: &str) -> bool {
         self.sessions.get(sid).is_some_and(|d| !d.host.is_empty())
+    }
+
+    /// For a server's pending permission request: (the server's session id, request id).
+    pub fn remote_request(&self, sid: &str) -> Option<(String, String)> {
+        let d = self.sessions.get(sid)?;
+        let id = sid.strip_prefix("r-")?;
+        (!d.host.is_empty() && d.state == "permission" && !d.request.is_empty())
+            .then(|| (id.to_string(), d.request.clone()))
     }
 
     /// Hide the current alert for this session until its state changes.
@@ -423,6 +449,18 @@ pub async fn run(ctx: Ctx) {
                                 focus_async(root.clone(), sid.clone(), now_secs()).await;
                             }
                             // Focusing counts as seen.
+                            tracker.dismiss(&sid);
+                        }
+                        // Allow / Deny on the board: a server's permission request.
+                        "allow" | "deny" => {
+                            if let Some((rid, request)) = tracker.remote_request(&sid) {
+                                let url = settings.borrow().ai.remote_url.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = remote::decide(&url, &rid, &request, &action).await {
+                                        log::warn!("board decision: {e:#}");
+                                    }
+                                });
+                            }
                             tracker.dismiss(&sid);
                         }
                         _ => {}
@@ -548,6 +586,8 @@ mod tests {
             updated: NOW - age,
             pids: pids.to_vec(),
             host: String::new(),
+            request: String::new(),
+            detail: String::new(),
         }
     }
 
@@ -605,6 +645,31 @@ mod tests {
     }
 
     #[test]
+    fn a_servers_permission_request_can_be_answered_on_the_board() {
+        let mut s = sess("permission", 5.0, "Claude wants to use Bash", "deskhub", &[]);
+        s.host = "vibecode".into();
+        s.request = "abc123".into();
+        s.detail = "Bash: npm test".into();
+        let mut t = Tracker::default();
+        let msg = t.poll(map(vec![("r-x1", s.clone())]), NOW, 0, 30.0).expect("an alert");
+        assert_eq!(msg["decide"], true);
+        assert_eq!(msg["title"], "Claude wants to use Bash");
+        assert_eq!(msg["detail"], "Bash: npm test");
+        assert_eq!(t.remote_request("r-x1"), Some(("x1".into(), "abc123".into())));
+        assert_eq!(t.remote_request("nope"), None);
+        // This PC's sessions are answered in their window: no Allow / Deny.
+        let mut local = s.clone();
+        local.host.clear();
+        let a = pick(&map(vec![("x2", local)]), NOW, 30.0, &HashMap::new()).unwrap();
+        assert!(!a.decide);
+        assert!(a.to_value().get("decide").is_none());
+        // No request id (older hook): nothing to answer.
+        s.request.clear();
+        let a = pick(&map(vec![("r-x1", s)]), NOW, 30.0, &HashMap::new()).unwrap();
+        assert!(!a.decide);
+    }
+
+    #[test]
     fn sanitises_ids() {
         assert_eq!(sanitize_id("abc-DEF_09"), "abc-DEF_09");
         assert_eq!(sanitize_id("a b/../c.d"), "abcd");
@@ -653,6 +718,7 @@ mod tests {
                 detail: "".into(),
                 project: "alpha".into(),
                 focus: true,
+                decide: false,
             }
         );
         assert_eq!(m.to_value()["agent"], "claude");

@@ -668,7 +668,7 @@ If you use OpenAI Codex instead, the AI page shows its usage the same way. The c
 
 ### Waiting alerts
 
-When a Claude Code session needs a permission approval, asks you a question, has a plan ready, or has finished and is waiting for your reply, the board shows it in place of the usage card on Home and over the history chart on the AI page, with the project name and Claude Code's own message (such as "Claude needs your permission to use Bash"), and puts a dot on the AI tab. Amber means it needs a permission; periwinkle means it's waiting for a reply. Tap the open button (**Show on PC** on the AI page) to bring that session's window to the front, or the cross (**Not now**) to dismiss it. A finished session only alerts after it has waited 30 seconds (`idle_alert_seconds` under `[claude]`), so the board doesn't nag while you're still at the PC. Opening the Claude app (or the terminal running the session) counts as seeing a finished session, so it clears from the board by itself, and a session that finishes while that window is in front doesn't alert at all. Questions and permission requests stay until you answer them. If you installed the hooks before, run the install command again to pick up new ones.
+When a Claude Code session needs a permission approval, asks you a question, has a plan ready, or has finished and is waiting for your reply, the board shows it in place of the usage card on Home and over the history chart on the AI page, with the project name and Claude Code's own message (such as "Claude needs your permission to use Bash"), and puts a dot on the AI tab. Amber means it needs a permission; periwinkle means it's waiting for a reply. Tap the strip on Home to open the AI page. Tap the open button (**Show on PC** on the AI page) to bring that session's window to the front, or the cross (**Not now**) to dismiss it. A session whose last reply ends with a question alerts at once ("Claude has a plan ready for your review" when it's about a plan, otherwise "Claude has a question for you"). Any other finished session only alerts after it has waited 30 seconds (`idle_alert_seconds` under `[claude]`), so the board doesn't nag while you're still at the PC. Opening the Claude app (or the terminal running the session) counts as seeing a finished session, so it clears from the board by itself, and a session that finishes while that window is in front doesn't alert at all. Questions and permission requests stay until you answer them. If you installed the hooks before, run the install command again to pick up new ones.
 
 ![Waiting alert](docs/screenshots/alert.png)
 
@@ -695,7 +695,9 @@ DESKHUB_RELAY_TOKEN=<random, 16+ characters> DESKHUB_RELAY_BIND=192.168.1.10:879
 
 Run `serve` as a service (a systemd unit with `EnvironmentFile=` holding those variables). In the app, open Settings > AI > Claude Code on a server, and enter `http://192.168.1.10:8791` and the token. The status row says when it's connected and how many sessions it sees.
 
-The relay sends only session state, project folder name, Claude's notification text and hourly token counts per model. It speaks plain HTTP with a token, so use it only on your own network or over a VPN.
+**Allow / Deny on the board.** A permission request from the server shows what it asks for ("Bash: npm test", a file path or a URL) with **Allow** and **Deny** buttons: on Home as a check and a cross, on the AI page next to **Not now**. Tapping one answers Claude Code on the server, once: it never adds an "always allow" rule. The terminal dialog stays open meanwhile, and whichever answers first wins; an answer that comes too late is refused. `deskhub-relay install-hooks` turns this on (the marker file `~/.deskhub/board_decisions`); delete that file to turn it off.
+
+The relay sends only session state, project folder name, Claude's notification text, what a permission request asks for and hourly token counts per model. It speaks plain HTTP with a token, so use it only on your own network or over a VPN: anyone with the token on your network could answer a waiting permission request.
 
 ## Shortcuts
 
@@ -764,7 +766,7 @@ The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion conn
 | `location` | `city`, `lat`, `lon` (decimal strings), `tz` (POSIX), `fahrenheit`, `h24`. Saved on the board; it restarts when they change. Sent by the desktop app once you edit the Location card. |
 | `home` | `header` (time and date in a top bar) and `grid`, a list of `widget`, `x`, `y`, `w`, `h`. Also `left` and `right` columns of widget names, which firmware from before the grid uses instead. Sent right after `layout`. |
 | `pc_power` | `asleep`: whether the PC's screen is off or the PC is going to sleep. Sent after each connect and when it changes. |
-| `alert` | A Claude Code session waiting for you: `id`, `kind` (`permission` or `input`), `agent`, `title`, `detail` and `project` (and `focus: false` for a session on a server: the board hides Show); or `clear: true` when nothing is waiting. |
+| `alert` | A Claude Code session waiting for you: `id`, `kind` (`permission` or `input`), `agent`, `title`, `detail` and `project` (and `focus: false` for a session on a server: the board hides Show; `decide: true` for a server's permission request: the board shows Allow and Deny); or `clear: true` when nothing is waiting. |
 | `tile_state` | `on`, the indexes of toggle buttons that are on (mic muted, speakers muted). Sent when it changes. |
 | `printer` | `printers` (up to 4) with `name`, `model`, `online`, `state`, `pct`, `remaining_min`, `layer`/`layers`, `file`, temperatures, `speed`, `error` and `ams`. Sent when something changes, and at least every 30 seconds. |
 | `net` | `online`, `latency_ms`, `jitter_ms`, `loss_pct`, `hist` (last 60 probes in ms, -1 = lost), `up_since`, `last_drop`, `today_bytes`, `month_bytes`, `speed`, `testing` and `ip`. Sent every 2 seconds. |
@@ -778,7 +780,7 @@ The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion conn
 | `speedtest` | no fields; runs a speed test now (at most one per 2 minutes) |
 | `steam_launch` | `appid`, a recent or running game to launch |
 | `shortcut` | `id`, the button's index. The PC looks up what the button does, so the board never holds commands. |
-| `alert_action` | `id` of the alert and `action`: `focus` (bring that session's window to the front) or `dismiss` |
+| `alert_action` | `id` of the alert and `action`: `focus` (bring that session's window to the front), `dismiss`, or `allow` / `deny` (answer a server's permission request) |
 
 The board also serves a few HTTP endpoints, all of which need the token as `?token=…`:
 

@@ -77,6 +77,8 @@ pub fn parse_sessions(v: &Value, local_now: f64) -> Result<(String, HashMap<Stri
                 updated: updated + skew,
                 pids: Vec::new(),
                 host: host.clone(),
+                request: sanitize_id(s["request"].as_str().unwrap_or_default()),
+                detail: ascii_fold(s["detail"].as_str().unwrap_or_default(), 120),
             },
         );
     }
@@ -133,6 +135,31 @@ async fn get_json(client: &reqwest::Client, url: &str, token: &str) -> Result<Va
     }
     let body = crate::plex::read_limited(resp, MAX_BODY).await?;
     serde_json::from_slice(&body).context("the reply isn't JSON")
+}
+
+/// Sends the board's Allow / Deny for permission request `request` of server session `id`.
+pub async fn decide(url: &str, id: &str, request: &str, behavior: &str) -> Result<()> {
+    let url = url.trim().trim_end_matches('/');
+    if url.is_empty() {
+        bail!("no server set");
+    }
+    // Ids are [A-Za-z0-9_-] (sanitize_id), behavior allow|deny: nothing to escape.
+    if !matches!(behavior, "allow" | "deny") {
+        bail!("unknown answer {behavior:?}");
+    }
+    let client = reqwest::Client::builder().timeout(TIMEOUT).user_agent("deskhub").build()?;
+    let resp = client
+        .post(format!("{url}/v1/decide?id={id}&request={request}&behavior={behavior}"))
+        .bearer_auth(token()?)
+        .send()
+        .await
+        .map_err(crate::plex::send_err)?;
+    match resp.status().as_u16() {
+        200 => Ok(()),
+        401 => bail!("the server refused the token"),
+        409 => bail!("the request was already answered"),
+        s => bail!("the server answered {s}"),
+    }
 }
 
 fn token() -> Result<String> {
@@ -227,7 +254,7 @@ mod tests {
     fn sessions_are_cleaned_and_moved_to_this_clock() {
         let v = json!({"now": 1000.0, "host": "vibecode", "sessions": {
             "abc-1": {"state": "permission", "message": "Claude needs your permission to use Bash",
-                      "project": "deskhub", "updated": 990.0},
+                      "project": "deskhub", "updated": 990.0, "request": "r1", "detail": "Bash: ls"},
             "bad/../id": {"state": "input", "updated": 995.0},
             "x": {"state": "nonsense", "updated": 995.0},
             "y": {"state": "idle"}
@@ -236,6 +263,7 @@ mod tests {
         assert_eq!(host, "vibecode");
         assert_eq!(s.len(), 2);
         let a = &s["abc-1"];
+        assert_eq!((a.request.as_str(), a.detail.as_str()), ("r1", "Bash: ls"));
         assert_eq!(a.updated, 1090.0); // 10 s before the server's now, on this clock
         assert_eq!((a.host.as_str(), a.project.as_str()), ("vibecode", "deskhub"));
         assert!(a.pids.is_empty());

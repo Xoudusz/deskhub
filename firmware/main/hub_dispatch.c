@@ -572,6 +572,7 @@ static void on_alert(const cJSON *m)
     copy_str(a.detail, sizeof(a.detail), m, "detail");
     copy_str(a.project, sizeof(a.project), m, "project");
     a.no_focus = cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(m, "focus"));
+    a.decide = get_bool(m, "decide");
     display_lock();
     ui_set_alert(&a);
     display_unlock();
