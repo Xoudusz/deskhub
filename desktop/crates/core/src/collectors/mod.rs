@@ -15,6 +15,7 @@ pub mod calendar;
 pub mod github;
 pub mod location;
 pub mod media;
+pub mod net;
 pub mod plex;
 pub mod power;
 pub mod remote;
@@ -60,5 +61,6 @@ pub fn start_all(handle: &ServiceHandle) -> remote::RemoteRx {
     tokio::spawn(plex::run(Ctx::new(handle, &rx)));
     tokio::spawn(calendar::run(Ctx::new(handle, &rx)));
     tokio::spawn(github::run(Ctx::new(handle, &rx)));
+    tokio::spawn(net::run(Ctx::new(handle, &rx)));
     rx
 }

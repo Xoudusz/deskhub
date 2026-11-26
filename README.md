@@ -59,7 +59,7 @@ The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windo
 | Shortcuts | Up to 16 buttons: key combos, apps, folders, URLs, volume, media, lock PC | companion |
 | 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion, over the local network (Bambu also through its cloud) |
 | Games | The Steam game you're playing with its cover and session time, your five most recent games, and a tap to launch one (optional) | companion, from Steam's local files |
-| Stats: Internet view | Online status, latency, jitter and packet loss with a one-minute chart, uptime and the last drop, data used today and this month, and an on-demand speed test | companion |
+| Stats: Internet view | Online status, latency, jitter and packet loss with a one-minute chart, uptime and the last drop, data used today and this month, and an on-demand speed test | desktop app (Settings > Connection > Internet) or the companion |
 | Timer | Countdown with presets from 1 to 45 minutes, pause and reset, and a full-screen "Time's up" card. The time left shows on its sidebar tab | the board itself, works without the PC |
 | GitHub | Your contribution chart for the whole year with month and weekday labels, contributions by kind, your current and longest streak and best day, this week against last week day by day, and your top repositories by commits; plus a Home widget (optional) | companion, from GitHub's API with your token |
 

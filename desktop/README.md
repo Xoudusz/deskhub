@@ -11,7 +11,7 @@ Layout:
   `bash ../firmware/sim/build.sh` into `public/sim/` (not committed; CI builds it). Without it the views say
   "Simulator not built".
 
-The Python companion (`../companion`) still does printers and internet stats (and iCloud CalDAV calendars). Don't run it at the same time as the app: the board accepts one companion only.
+The Python companion (`../companion`) is only needed for 3D printers and iCloud CalDAV calendars. Don't run it at the same time as the app: the board accepts one companion only.
 
 ## Frontend ↔ backend contract
 
@@ -98,6 +98,10 @@ type Settings = {
     feeds: { name: string; url: string; color: string }[];  // url: https:// or webcal://; color "#RRGGBB" ("" = blue)
     days: number;                // 1-60, default 7
   };
+  internet: {                    // the Network page (collectors/net.rs); Settings > Connection
+    show_ip: boolean;            // public IP from speed.cloudflare.com/cdn-cgi/trace every 30 min
+    speedtest_hours: number;     // automatic speed test every N hours (0 = only from the board)
+  };
   sound: {                       // P4 board speaker (layout "sound"); Settings > Sound
     mute: boolean;
     volume: number;              // 0-100, default 60
@@ -144,6 +148,13 @@ back) only when at least one feed is set, so the Python companion's calendar isn
 The GitHub collector (`collectors/github.rs`, port of `companion/deskhub/github.py`) asks
 api.github.com every 15 minutes (10 after a failure, at once after `github_token_set`) and sends
 `github` when it changes. Saving a token adds `github` to `pages.enabled`.
+
+The internet collector (`collectors/net.rs`, port of `companion/deskhub/netstats.py`) connects to
+1.1.1.1:443 (then 8.8.8.8:443) every 2 s and sends `net`: latency (median of 5), jitter, loss and
+history over 60 probes, uptime and the last drop, data used today and this month (all
+interfaces, kept in `~/.deskhub/net_usage.json`, the companion's file), the last speed test
+(speed.cloudflare.com: 25 MB down, 10 MB up; on the board's `speedtest`, at most one per 2 min,
+or every `speedtest_hours`) and, when `show_ip`, the public IP.
 
 Pages known to the board: home, stats, ai, calendar, weather, media, plex (desktop app only), printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
 
