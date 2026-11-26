@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod github;
 mod plex;
 mod remote;
 mod updates;
@@ -665,7 +666,10 @@ pub fn run() {
             plex::plex_select_server,
             plex::plex_sign_out,
             remote::remote_token_set,
-            remote::remote_status
+            remote::remote_status,
+            github::github_token_set,
+            github::github_status,
+            github::calendar_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building Desk Hub")

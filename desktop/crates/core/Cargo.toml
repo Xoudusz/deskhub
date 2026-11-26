@@ -17,6 +17,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # Local time zone offset for the "today" and day buckets of the AI usage.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rrule = "0.14"
+chrono-tz = "0.10"
 toml = "1"
 # Plain HTTP here; TLS (schannel) is added for Windows below, so Linux builds need no OpenSSL.
 reqwest = { version = "0.12", default-features = false }

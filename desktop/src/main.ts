@@ -8,12 +8,12 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, onPlex, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type SoundName, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type SoundName, type CalendarFeed, type FeedStatus, type GithubStatus, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 import { mountSim, onSimState, simState } from "./sim";
 
-type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "media" | "ai" | "sound" | "appearance" | "connection" | "about";
+type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "media" | "ai" | "calendar" | "sound" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness" | "volume";
 type Cell = Settings["home"]["grid"][number];
 
@@ -25,6 +25,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["games", "gamepad", "Games"],
   ["media", "film", "Media"],
   ["ai", "sparkles", "AI agents"],
+  ["calendar", "calendar", "Calendar & GitHub"],
   ["sound", "volume-2", "Sound"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
@@ -205,6 +206,7 @@ function sectionHtml(): string {
     case "games": return gamesHtml();
     case "media": return mediaHtml();
     case "ai": return aiHtml();
+    case "calendar": return calendarHtml();
     case "sound": return soundHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
@@ -261,11 +263,77 @@ function displayHtml(): string {
   return brightness + clock + night + pc + locationHtml();
 }
 
+// ---- Calendar & GitHub: .ics feeds and the GitHub token, statuses asked every 3 s while open ----
+let feedStatus: FeedStatus[] = [];
+let gh: GithubStatus | null = null;
+let ghNote = "";
+
+function feedStatusText(i: number): string {
+  const f = S.calendar.feeds[i];
+  if (!f.url.trim()) return "Paste the calendar's .ics link";
+  const name = f.name.trim() || `Calendar ${i + 1}`;
+  const st = feedStatus.find(s => s.name === name);
+  if (!st) return "Reading the calendar";
+  return st.ok ? `${icon("check", 12)}${st.events === 1 ? "1 event" : `${st.events} events`} in the next ${S.calendar.days} days`
+    : `${icon("x", 12)}${esc(st.error)}`;
+}
+
+function calendarHtml(): string {
+  const c = S.calendar;
+  const feeds = c.feeds.map((f, i) => [
+    row(`<input class="txt" data-k="calName" data-i="${i}" value="${esc(f.name)}" placeholder="Calendar ${i + 1}" spellcheck="false">`,
+      `<input type="color" data-k="calColor" data-i="${i}" value="${esc(f.color || "#7c9cff")}" title="Color on the board">` +
+        `<button type="button" class="ib" data-act="cal-remove" data-i="${i}" title="Remove">${icon("trash", 13)}</button>`),
+    row(`<input class="txt" type="password" data-k="calUrl" data-i="${i}" value="${esc(f.url)}" placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics" autocomplete="off" spellcheck="false">`,
+      "", feedStatusText(i)),
+  ].join(""));
+  const cal = card("Calendars", "Events for the board's Calendar page and reminders", [
+    ...feeds,
+    row("", `<button type="button" data-act="cal-add">${icon("plus", 13)}Add calendar</button>`),
+    row("Days ahead", `<input class="num" type="number" min="1" max="60" data-k="calDays" value="${c.days}">`),
+    text("Outlook: outlook.office.com > Settings > Calendar > Shared calendars > Publish a calendar, then copy the ICS link. Google: Calendar settings > Secret address in iCal format."),
+    text("The link lets anyone read the calendar: it stays on this PC and is never logged."),
+  ].join(""));
+  const g = gh;
+  const ghState = !g ? row("Status", "", "Checking")
+    : !g.token_saved ? row(`${icon("x", 14)}No token`, "", "Paste a token to show your contributions")
+    : g.pending ? row("Status", "", "Asking GitHub")
+    : g.ok ? row(`${icon("check", 14)}Connected`, "", esc(`${g.login} - ${g.total} contributions in the last year`))
+    : row(`${icon("x", 14)}GitHub didn't answer`, "", esc(g.error));
+  const github = card("GitHub", "Your contribution chart on the board's GitHub page", [
+    row("Token", `<input class="txt" type="password" data-k="ghToken" value="" placeholder="${g?.token_saved ? "Saved (type to replace, empty to remove)" : "github_pat_..."}" autocomplete="off" spellcheck="false">`,
+      "github.com/settings/personal-access-tokens: a fine-grained token, no permissions needed. Kept in Windows Credential Manager"),
+    ghState,
+    ...(ghNote ? [text(ghNote)] : []),
+  ].join(""));
+  return cal + github;
+}
+
+function saveFeeds(feeds: CalendarFeed[]) {
+  void save({ calendar: { feeds } });
+}
+
+function pollCalendar() {
+  const key = (x: unknown) => JSON.stringify(x);
+  const tick = () => {
+    if (section !== "calendar") return;
+    Promise.all([api.calendarStatus(), api.githubStatus()]).then(([f, g]) => {
+      if (key(f) === key(feedStatus) && key(g) === key(gh)) return;
+      feedStatus = f;
+      gh = g;
+      if (section === "calendar") render();
+    }).catch(() => undefined);
+  };
+  setInterval(tick, 3000);
+  return tick;
+}
+const calendarTick = pollCalendar();
+
 const SOUND_NAMES: [string, string][] = [["off", "Off"], ["chime", "Chime"], ["bell", "Bell"], ["beep", "Beep"], ["soft", "Soft"]];
 const SOUND_EVENTS: ["alert" | "timer" | "reminder", string, string][] = [
   ["alert", "Claude Code alerts", "When Claude Code waits for you"],
   ["timer", "Timer done", ""],
-  ["reminder", "Calendar reminders", "Needs a calendar source (the Python companion)"],
+  ["reminder", "Calendar reminders", "Needs a calendar (Settings > Calendar & GitHub)"],
 ];
 
 function soundHtml(): string {
@@ -1035,7 +1103,7 @@ function aboutHtml(): string {
     TAURI ? row("Updates", `<button type="button" data-act="update-check"${updChecking ? " disabled" : ""}>${icon("refresh-cw", 13)}Check now</button>`,
       "New versions download in the background; the button at the top installs them") : "",
     text("Replaces the Python companion for media, PC stats, Claude usage, shortcuts and games."),
-    text("Calendar, printers, internet and GitHub still need the Python companion. Don't run both at once."),
+    text("Printers and internet still need the Python companion. Don't run both at once."),
   ].join(""));
 }
 
@@ -1084,6 +1152,14 @@ async function act(el: HTMLElement) {
     case "preset-delete": deletePreset(); return;
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
+    case "cal-add":
+      saveFeeds([...S.calendar.feeds, { name: "", url: "", color: "#7c9cff" }]);
+      render(true);
+      return;
+    case "cal-remove":
+      saveFeeds(S.calendar.feeds.filter((_, i) => i !== Number(el.dataset.i)));
+      render(true);
+      return;
     case "sound-test": {
       const ev = el.dataset.ev as "alert" | "timer" | "reminder";
       api.soundTest(S.sound[ev]).catch(() => undefined);
@@ -1312,6 +1388,31 @@ main.addEventListener("change", e => {
         .then(s => { remote = s; }, err => { remoteNote = String(err); })
         .finally(() => render(true));
       return;
+    case "calName": case "calUrl": case "calColor": {
+      const i = Number(t.dataset.i);
+      const field = k === "calName" ? "name" : k === "calUrl" ? "url" : "color";
+      saveFeeds(S.calendar.feeds.map((f, j) => (j === i ? { ...f, [field]: t.value.trim() } : f)));
+      return;
+    }
+    case "calDays": {
+      const v = Math.max(1, Math.min(60, Math.round(Number(t.value) || 7)));
+      void save({ calendar: { days: v } });
+      return;
+    }
+    case "ghToken": {
+      const token = t.value;
+      void api.githubTokenSet(token)
+        .then(() => {
+          ghNote = "";
+          t.value = "";
+          // A new token shows the GitHub page on the board.
+          if (token.trim() && !S.pages.enabled.includes("github")) void save({ pages: { enabled: [...S.pages.enabled, "github"] } });
+          return api.githubStatus();
+        })
+        .then(s => { gh = s; }, err => { ghNote = String(err); })
+        .finally(() => render(true));
+      return;
+    }
     case "soundMute": void save({ sound: { mute: on } }); return;
     case "sound": {
       const ev = t.dataset.ev as "alert" | "timer" | "reminder";
@@ -1345,6 +1446,7 @@ nav.addEventListener("click", e => {
   if (!b) return;
   section = b.dataset.sec as SectionId;
   if (section === "ai") claude = null; // re-read Claude Code's settings each visit
+  if (section === "calendar") calendarTick();
   renderNav();
   render(true);
   main.scrollTop = 0;

@@ -32,6 +32,8 @@ pub struct Settings {
     pub media_server: MediaServer,
     /// The P4 board's speaker (layout "sound").
     pub sound: Sound,
+    /// .ics feeds for the Calendar page (collectors/calendar.rs).
+    pub calendar: Calendar,
     /// config.toml was imported once.
     pub imported: bool,
 }
@@ -69,6 +71,7 @@ impl Default for Settings {
             games: Games::default(),
             media_server: MediaServer::default(),
             sound: Sound::default(),
+            calendar: Calendar::default(),
             imported: false,
         }
     }
@@ -134,6 +137,32 @@ impl Default for Sound {
             remind_minutes: 5,
         }
     }
+}
+
+/// Calendar feeds: .ics links (Outlook's published calendar, Google's secret address,
+/// any webcal:// link). The links can grant access: never logged.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Calendar {
+    pub feeds: Vec<CalendarFeed>,
+    /// Days ahead the Calendar page shows (1-60).
+    pub days: i64,
+}
+
+impl Default for Calendar {
+    fn default() -> Self {
+        Self { feeds: Vec::new(), days: 7 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CalendarFeed {
+    /// Shown on the board under each event ("" = "Calendar N").
+    pub name: String,
+    pub url: String,
+    /// "#RRGGBB" ("" = the default blue).
+    pub color: String,
 }
 
 /// Sound names the board knows; anything else is sent as "off".
@@ -996,6 +1025,7 @@ mod tests {
                 "ai",
                 "appearance",
                 "board",
+                "calendar",
                 "display",
                 "games",
                 "home",

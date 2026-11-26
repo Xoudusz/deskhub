@@ -11,7 +11,7 @@ Layout:
   `bash ../firmware/sim/build.sh` into `public/sim/` (not committed; CI builds it). Without it the views say
   "Simulator not built".
 
-The Python companion (`../companion`) still does calendars, printers, internet stats and GitHub. Don't run it at the same time as the app: the board accepts one companion only.
+The Python companion (`../companion`) still does printers and internet stats (and iCloud CalDAV calendars). Don't run it at the same time as the app: the board accepts one companion only.
 
 ## Frontend ↔ backend contract
 
@@ -39,6 +39,9 @@ Commands (`invoke`):
 | `plex_servers` | – | `{ id, name, owned }[]`: Plex Media Servers on the signed-in account (plex.tv `/resources`) |
 | `plex_select_server` | `{ id: string, name: string }` | `null`: saves `media_server.server_id` / `server_name` |
 | `plex_sign_out` | – | `null`: deletes the token and forgets the server |
+| `github_token_set` | `{ token: string }` | `null`: saves a GitHub token (`github_pat_...` or `ghp_...`) in Credential Manager ("Desk Hub" / "github-token", read back to confirm) and asks GitHub now; `""` deletes it |
+| `github_status` | – | `{ token_saved, pending, ok, error, login, total }`: the contribution collector's last answer (`pending` until it has asked) |
+| `calendar_status` | – | `{ name, ok, error, events }[]`: the last read of each calendar feed (error names the problem, never the link) |
 | `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):
@@ -91,6 +94,10 @@ type Settings = {
     server_name: string;
     client_id: string;           // X-Plex-Client-Identifier, made once per install
   };
+  calendar: {                    // .ics feeds for the Calendar page (collectors/calendar.rs)
+    feeds: { name: string; url: string; color: string }[];  // url: https:// or webcal://; color "#RRGGBB" ("" = blue)
+    days: number;                // 1-60, default 7
+  };
   sound: {                       // P4 board speaker (layout "sound"); Settings > Sound
     mute: boolean;
     volume: number;              // 0-100, default 60
@@ -127,6 +134,16 @@ board's `plex` page to `pages.enabled`. No plain-HTTP fallback (Linux dev builds
 anything plays (15 s idle, 60 s after a failure) and sends `media_server` JSON plus an `ARS1`
 poster (128x192, letterboxed). Everyone on the server counts; one session shows, playing first
 and sticky, with "(+N more)". Read-only: no seek or play/pause.
+
+The calendar collector (`collectors/calendar.rs`, parser `ics.rs`) reads each `calendar.feeds`
+link every 10 minutes and whenever the calendar settings change (`webcal://` becomes `https://`,
+4 MB cap). Recurring events are expanded with the `rrule` crate (EXDATE, RECURRENCE-ID overrides,
+UNTIL applied by hand); TZIDs are IANA names or Outlook's Windows names (table in `ics.rs`),
+anything else is the PC's zone. It sends `events` (up to 16, the next `days`, window from a day
+back) only when at least one feed is set, so the Python companion's calendar isn't overwritten.
+The GitHub collector (`collectors/github.rs`, port of `companion/deskhub/github.py`) asks
+api.github.com every 15 minutes (10 after a failure, at once after `github_token_set`) and sends
+`github` when it changes. Saving a token adds `github` to `pages.enabled`.
 
 Pages known to the board: home, stats, ai, calendar, weather, media, plex (desktop app only), printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
 

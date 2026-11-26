@@ -52,7 +52,7 @@ The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windo
 | Home | Clock, date, Claude limits, next events, weather, now playing, CPU/GPU/RAM | everything below |
 | PC stats | CPU, GPU, RAM and VRAM gauges, GPU temperature, a one-minute history chart, network and disk | companion |
 | AI | Claude Code or Codex 5-hour and weekly limits with reset times, tokens today, a 7-day chart, usage per model | companion, from Claude Code or Codex |
-| Calendar | Up to 16 upcoming events, grouped by day, from the next 7 days or as many as you set | companion, from Google, Apple iCloud, Outlook or any ICS feed |
+| Calendar | Up to 16 upcoming events, grouped by day, from the next 7 days or as many as you set | desktop app (Settings > Calendar & GitHub: Outlook, Google or any .ics link) or the companion (also Apple iCloud CalDAV) |
 | Weather | Current conditions, the next 24 hours and 6 days | the board itself, from [Open-Meteo](https://open-meteo.com) with the GeoSphere Austria model (ECMWF where it doesn't reach) |
 | Media | Whatever Windows lists as playing (Spotify, YouTube in a browser, VLC…) with the cover, a seek bar and controls | companion |
 | Plex | What plays on your Plex server (everyone on it; one shows, "+N more"), or its version and library while idle. **Sign in with Plex** in the desktop app's Media section; signing in turns this page on | desktop app |
@@ -256,7 +256,14 @@ Run these in `companion/`.
 
 ## Calendars
 
-Setup offers this step. You can also run it on its own:
+**Desktop app:** open Settings > Calendar & GitHub, choose *Add calendar*, and paste the calendar's .ics link. The status line under it shows how many events it found or why it failed. The board's Calendar page fills in within a few seconds and refreshes every 10 minutes.
+
+- **Outlook**: on [outlook.office.com](https://outlook.office.com) (or outlook.live.com), open Settings > Calendar > Shared calendars, choose *Publish a calendar*, pick the calendar and *Can view all details*, select *Publish*, then copy the **ICS** link. Work accounts sometimes have publishing turned off by IT.
+- **Google Calendar**: the *Secret address in iCal format*, as below.
+
+The link lets anyone who has it read the calendar: Desk Hub keeps it on this PC and never writes it to a log. Apple iCloud calendars (CalDAV) still need the Python companion.
+
+**Python companion:** setup offers this step. You can also run it on its own:
 
 ```powershell
 uv run deskhub-calendars
@@ -437,7 +444,7 @@ The streak counts days in a row with contributions up to today; a quiet today do
 
 Add `"github"` to `[pages] enabled` to show it (setup offers to). Without a `[pages]` block it shows whenever the widget is on Home.
 
-It needs a fine-grained personal access token with no extra permissions ([make one here](https://github.com/settings/personal-access-tokens/new)). Run `uv run deskhub-setup github`: it checks the token with GitHub, shows your total, keeps the token in the Windows credential store (not in `config.toml`) and offers to put the chart in the widest free spot on Home. Because the token is yours, private contributions count too when *Private contributions* is on in your profile settings.
+It needs a fine-grained personal access token with no extra permissions ([make one here](https://github.com/settings/personal-access-tokens/new)). In the desktop app, paste it in Settings > Calendar & GitHub: it goes into Windows Credential Manager, the status line shows your login and total, and the GitHub page is added to the board. With the Python companion, run `uv run deskhub-setup github`: it checks the token with GitHub, shows your total, keeps the token in the Windows credential store (not in `config.toml`) and offers to put the chart in the widest free spot on Home. Because the token is yours, private contributions count too when *Private contributions* is on in your profile settings.
 
 **Private repositories.** With the token above, private work counts in the squares and the total, and the page shows how many contributions were private, but GitHub doesn't say which repositories they were in. To list private repositories under *Top repos*, give the token *Repository access: All repositories* (or pick some) with *Metadata* and *Contents* read-only. The companion then counts your commits on each one's default branch over the last year.
 

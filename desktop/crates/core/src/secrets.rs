@@ -35,6 +35,8 @@ pub const BOARD_TOKEN: &str = "board-token";
 pub const PLEX_TOKEN: &str = "plex-token";
 /// The token of a deskhub-relay (Claude Code on a server, Settings > AI).
 pub const REMOTE_TOKEN: &str = "remote-claude-token";
+/// A GitHub fine-grained personal access token (contribution chart, Settings > Calendar & GitHub).
+pub const GITHUB_TOKEN: &str = "github-token";
 
 #[cfg(windows)]
 pub struct CredentialManager {
