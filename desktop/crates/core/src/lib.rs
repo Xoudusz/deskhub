@@ -5,6 +5,7 @@ pub mod claude_install;
 pub mod collectors;
 pub mod firmware;
 pub mod http;
+pub mod ics;
 pub mod pages;
 pub mod plex;
 pub mod protocol;

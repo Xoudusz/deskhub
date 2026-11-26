@@ -11,6 +11,8 @@ use crate::settings::Settings;
 
 pub mod ai;
 pub mod alerts;
+pub mod calendar;
+pub mod github;
 pub mod location;
 pub mod media;
 pub mod plex;
@@ -56,5 +58,7 @@ pub fn start_all(handle: &ServiceHandle) -> remote::RemoteRx {
     tokio::spawn(theme::run(Ctx::new(handle, &rx)));
     tokio::spawn(location::run(Ctx::new(handle, &rx)));
     tokio::spawn(plex::run(Ctx::new(handle, &rx)));
+    tokio::spawn(calendar::run(Ctx::new(handle, &rx)));
+    tokio::spawn(github::run(Ctx::new(handle, &rx)));
     rx
 }

@@ -44,10 +44,12 @@ typedef struct {
     int gap_ms;       // silence between notes
 } tune_t;
 
-static const note_t CHIME[] = {{880.0f, 170, 120, 0.15f}, {1318.5f, 420, 220, 0.15f}};
-static const note_t BELL[] = {{659.3f, 1100, 380, 0.5f}};
-static const note_t BEEP[] = {{1000.0f, 90, 1000, 0.25f}, {1000.0f, 90, 1000, 0.25f}};
-static const note_t SOFT[] = {{523.3f, 260, 200, 0.0f}, {659.3f, 380, 260, 0.0f}};
+// Mostly pure tones with a touch of overtone: brighter mixes sounded harsh on the
+// board's small speaker.
+static const note_t CHIME[] = {{880.0f, 200, 140, 0.05f}, {1318.5f, 480, 240, 0.05f}};
+static const note_t BELL[] = {{659.3f, 1200, 420, 0.25f}};
+static const note_t BEEP[] = {{988.0f, 110, 1000, 0.08f}, {988.0f, 110, 1000, 0.08f}};
+static const note_t SOFT[] = {{523.3f, 300, 220, 0.0f}, {659.3f, 420, 280, 0.0f}};
 
 static const tune_t TUNES[SOUND_COUNT] = {
     [SOUND_CHIME] = {CHIME, 2, 0},
@@ -67,8 +69,10 @@ static bool write_frames(int16_t *buf, int frames)
 static bool play_note(const note_t *n, int16_t *buf)
 {
     const int total = RATE * n->ms / 1000;
-    const int attack = RATE * 5 / 1000;
-    const int release = RATE * 8 / 1000;
+    // Gentle start and end (raised cosine): no click when a note starts or stops.
+    int attack = RATE * 15 / 1000;
+    int release = RATE * 60 / 1000;
+    if (attack + release > total) attack = release = total / 2;
     const float w = 2.0f * (float)M_PI * n->hz / RATE;
     const float decay = expf(-1000.0f / (n->tau_ms * RATE));
     float env = 1.0f;
@@ -76,11 +80,11 @@ static bool play_note(const note_t *n, int16_t *buf)
         int frames = total - i < CHUNK ? total - i : CHUNK;
         for (int k = 0; k < frames; k++, i++) {
             float a = env;
-            if (i < attack) a *= (float)i / attack;
-            if (total - i < release) a *= (float)(total - i) / release;
+            if (i < attack) a *= 0.5f - 0.5f * cosf((float)M_PI * i / attack);
+            if (total - i < release) a *= 0.5f - 0.5f * cosf((float)M_PI * (total - i) / release);
             float t = w * i;
             float s = sinf(t) + n->overtone * (0.6f * sinf(2.0f * t) + 0.4f * sinf(3.0f * t));
-            int16_t v = (int16_t)(s / (1.0f + n->overtone) * a * 0.7f * 32767.0f);
+            int16_t v = (int16_t)(s / (1.0f + n->overtone) * a * 0.6f * 32767.0f);
             buf[2 * k] = v;
             buf[2 * k + 1] = v;
             env *= decay;

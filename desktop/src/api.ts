@@ -13,6 +13,9 @@ export type Widget = "clock" | "claude" | "events" | "weather" | "media" | "stat
 export type ClaudeState = { statusline: boolean; hooks: boolean; cli: boolean };
 /** Claude Code on a server: the deskhub-relay poller (the token stays in the credential store). */
 export type RemoteStatus = { configured: boolean; token_saved: boolean; ok: boolean; error: string; host: string; sessions: number };
+export type CalendarFeed = { name: string; url: string; color: string };
+export type FeedStatus = { name: string; ok: boolean; error: string; events: number };
+export type GithubStatus = { token_saved: boolean; pending: boolean; ok: boolean; error: string; login: string; total: number };
 
 export type Settings = {
   board: { host: string; token: string };
@@ -33,6 +36,7 @@ export type Settings = {
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   media_server: MediaServer;
   sound: Sound;
+  calendar: { feeds: CalendarFeed[]; days: number };
   imported: boolean;
 };
 
@@ -209,6 +213,7 @@ const mock: Settings = {
   location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },
   media_server: { signed_in: false, server_id: "", server_name: "", client_id: "deskhub-mock" },
   sound: { mute: false, volume: 60, alert: "chime", timer: "bell", reminder: "chime", remind_minutes: 5 },
+  calendar: { feeds: [], days: 7 },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
@@ -266,6 +271,7 @@ setTimeout(() => {
 }, 1500);
 
 // ---- API ----
+let mockGithubToken = false;
 let mockRemoteToken = false;
 
 export const api = {
@@ -376,6 +382,17 @@ export const api = {
     mockRemoteToken = token.trim() !== "";
     return Promise.resolve();
   },
+  githubTokenSet: (token: string): Promise<void> => {
+    if (TAURI) return invoke<void>("github_token_set", { token });
+    mockGithubToken = token.trim() !== "";
+    return Promise.resolve();
+  },
+  githubStatus: (): Promise<GithubStatus> =>
+    TAURI ? invoke<GithubStatus>("github_status")
+      : Promise.resolve({ token_saved: mockGithubToken, pending: false, ok: mockGithubToken, error: "", login: mockGithubToken ? "octocat" : "", total: mockGithubToken ? 412 : 0 }),
+  calendarStatus: (): Promise<FeedStatus[]> =>
+    TAURI ? invoke<FeedStatus[]>("calendar_status")
+      : Promise.resolve(mock.calendar.feeds.filter(f => f.url).map((f, i) => ({ name: f.name || `Calendar ${i + 1}`, ok: true, error: "", events: 3 }))),
   remoteStatus: (): Promise<RemoteStatus> =>
     TAURI ? invoke<RemoteStatus>("remote_status")
       : Promise.resolve({ configured: mock.ai.remote_url !== "", token_saved: mockRemoteToken, ok: mock.ai.remote_url !== "" && mockRemoteToken, error: mockRemoteToken ? "" : "no token saved for the server", host: "vibecode", sessions: 1 }),
