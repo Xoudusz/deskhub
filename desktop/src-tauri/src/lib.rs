@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod plex;
 mod updates;
 
 use deskhub_core::claude_install;
@@ -374,6 +375,8 @@ fn import_config(
     let mut next = import_config_file(&file).map_err(|e| format!("{e:#}"))?;
     // The theme is an app setting, not part of config.toml: keep it.
     next.appearance = state.settings().appearance;
+    // So is the Plex sign-in (its token is in the credential store).
+    next.media_server = state.settings().media_server;
     state.apply(&app, next)
 }
 
@@ -491,6 +494,9 @@ pub fn run() {
             let (mut settings, first_run) = load(&file);
             let store = secrets::system_store();
             secrets::load_token(store.as_ref(), &mut settings);
+            if settings.media_server.client_id.is_empty() {
+                settings.media_server.client_id = deskhub_core::plex::new_client_id();
+            }
             // Every start: moves a token still in settings.json into the credential store.
             if let Err(e) = save(&file, &secrets::for_file(store.as_ref(), &settings)) {
                 log::warn!("could not save settings: {e}");
@@ -535,6 +541,7 @@ pub fn run() {
                 status: Mutex::new(status),
             });
             app.manage(updates::Updates::default());
+            app.manage(plex::SignIn::default());
             updates::spawn_loop(handle.clone());
 
             // Forward every status change to the frontend (App is managed by now).
@@ -638,7 +645,12 @@ pub fn run() {
             claude_connect,
             updates::update_status,
             updates::update_check,
-            updates::update_install
+            updates::update_install,
+            plex::plex_sign_in,
+            plex::plex_sign_in_cancel,
+            plex::plex_servers,
+            plex::plex_select_server,
+            plex::plex_sign_out
         ])
         .build(tauri::generate_context!())
         .expect("error while building Desk Hub")

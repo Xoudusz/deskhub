@@ -6,14 +6,14 @@ import "./styles.css";
 import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
-  api, win, TAURI, onStatus, onSettings, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
+  api, win, TAURI, onStatus, onSettings, onPlex, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type PlexServer, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 import { mountSim, onSimState, simState } from "./sim";
 
-type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "ai" | "appearance" | "connection" | "about";
+type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "media" | "ai" | "appearance" | "connection" | "about";
 type SliderKey = "brightness" | "nightBrightness";
 type Cell = Settings["home"]["grid"][number];
 
@@ -23,6 +23,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["pages", "layout-grid", "Pages"],
   ["shortcuts", "zap", "Shortcuts"],
   ["games", "gamepad", "Games"],
+  ["media", "film", "Media"],
   ["ai", "sparkles", "AI agents"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
@@ -197,6 +198,7 @@ function sectionHtml(): string {
     case "pages": return pagesHtml();
     case "shortcuts": return shortcutsHtml();
     case "games": return gamesHtml();
+    case "media": return mediaHtml();
     case "ai": return aiHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
@@ -637,6 +639,64 @@ function gamePatch(change: Partial<CustomGame>) {
 }
 
 // Claude Code wiring, fetched when the AI section opens.
+// ---- Media: Plex server (Sign in with Plex) ----
+/** The sign-in page while waiting for approval ("" = not signing in). */
+let plexUrl = "";
+let plexNote = "";
+let plexServers: PlexServer[] | null = null;
+let plexLoading = false;
+
+function loadPlexServers() {
+  if (plexLoading) return;
+  plexLoading = true;
+  api.plexServers()
+    .then(list => { plexServers = list; })
+    .catch(err => { plexServers = []; plexNote = String(err); })
+    .finally(() => { plexLoading = false; if (section === "media") render(true); });
+}
+
+function mediaHtml(): string {
+  const m = S.media_server;
+  if (!m.signed_in) {
+    const rows = plexUrl
+      ? [
+          row("Waiting for Plex", `<button type="button" data-act="plex-cancel">${icon("x", 13)}Cancel</button>`,
+            "Approve Desk Hub in the browser window that opened. No window? Open this address:"),
+          `<div class="swr"><input class="txt" readonly value="${esc(plexUrl)}" spellcheck="false" style="width:100%"></div>`,
+        ]
+      : [row("Plex", `<button type="button" data-act="plex-sign-in">${icon("zap", 13)}Sign in with Plex</button>`,
+          "Shows what plays on your Plex server on the board's media page, next to the PC's media")];
+    return card("Media server", "Plex now playing on the board", [...rows, ...(plexNote ? [text(plexNote)] : [])].join(""));
+  }
+  if (!plexServers) loadPlexServers();
+  const list = plexServers ?? [];
+  const known = list.some(s => s.id === m.server_id);
+  const options: [string, string][] = [
+    ...(m.server_id && !known ? [[m.server_id, m.server_name || "Saved server"] as [string, string]] : []),
+    ...(m.server_id ? [] : [["", "Pick a server"] as [string, string]]),
+    ...list.map(s => [s.id, s.owned ? s.name : `${s.name} (shared)`] as [string, string]),
+  ];
+  const server = plexServers === null
+    ? row("Server", "", "Loading your servers")
+    : row("Server", select(`data-k="plexServer"`, options, m.server_id),
+        list.length ? "Everyone playing on it shows; the board picks one and counts the rest" : "No Plex Media Server on this account");
+  return card("Media server", "Plex now playing on the board", [
+    row("Signed in to Plex", `<button type="button" data-act="plex-sign-out">${icon("x", 13)}Sign out</button>`),
+    server,
+    ...(plexNote ? [text(plexNote)] : []),
+  ].join(""));
+}
+
+async function plexSignIn() {
+  plexNote = "";
+  try {
+    plexUrl = await api.plexSignIn();
+  } catch (err) {
+    plexNote = String(err);
+  }
+  render(true);
+}
+
 let claude: ClaudeState | null = null;
 let claudeNote = "";
 let claudeLoading = false;
@@ -959,6 +1019,12 @@ async function act(el: HTMLElement) {
     case "step": stepSlider(el.dataset.slider as SliderKey, Number(el.dataset.d)); return;
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
+    case "plex-sign-in": await plexSignIn(); return;
+    case "plex-cancel": plexUrl = ""; await api.plexSignInCancel(); render(true); return;
+    case "plex-sign-out":
+      plexServers = null; plexNote = "";
+      try { await api.plexSignOut(); } catch (err) { plexNote = String(err); render(true); }
+      return;
     case "import": await importConfig(); return;
     case "update-check": checkUpdates(); return;
     case "firmware": await updateFirmware(); return;
@@ -1003,6 +1069,11 @@ main.addEventListener("change", e => {
   if (!k) return;
   const on = (t as HTMLInputElement).checked === true;
   switch (k) {
+    case "plexServer": {
+      const srv = plexServers?.find(s => s.id === t.value);
+      if (srv) api.plexSelectServer(srv.id, srv.name).catch(err => { plexNote = String(err); render(true); });
+      return;
+    }
     case "nightOn":
       void save({ display: { night: on ? "22:00-07:00" : "" } });
       return;
@@ -1198,6 +1269,12 @@ async function boot() {
     st = s;
     setDot();
     if (section === "status") render(true);
+  });
+  await onPlex(o => {
+    plexUrl = "";
+    plexNote = o.state === "done" ? "" : o.message;
+    plexServers = null;
+    if (section === "media") render(true);
   });
   await onSettings(s => {
     // A grid or preset list changed elsewhere: drop selections that may now point at
