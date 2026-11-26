@@ -74,7 +74,7 @@ jobs:
         with:
           name: board-sim
           path: desktop/public/sim
-      - run: cargo test -p deskhub-core -p deskhub-cli
+      # Tests ran on Windows in the PR (desktop.yml, Windows installer); a tag is a merged main commit.
 
       - name: deskhub-cli sidecar
         run: |
