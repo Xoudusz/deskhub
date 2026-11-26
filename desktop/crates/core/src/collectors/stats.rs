@@ -114,22 +114,10 @@ pub fn cpu_name_clean(raw: &str) -> String {
     ascii_fold(s.split('@').next().unwrap_or(""), 40)
 }
 
-/// Port of text.py `ascii_fold`: smart quotes and dashes mapped, other non-ASCII dropped,
-/// whitespace collapsed, cut to `limit` characters.
+/// Text the board can draw, at most `limit` bytes (crate::text::board_text): Latin-1
+/// letters such as ä ö ü ß stay, other letters fold to their base, emoji are dropped.
 pub fn ascii_fold(s: &str, limit: usize) -> String {
-    let mut t = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\u{2018}' | '\u{2019}' => t.push('\''),
-            '\u{201C}' | '\u{201D}' => t.push('"'),
-            '\u{2013}' | '\u{2014}' | '\u{00B7}' | '\u{2022}' => t.push('-'),
-            '\u{2026}' => t.push_str("..."),
-            c if c.is_ascii() => t.push(c),
-            _ => {}
-        }
-    }
-    let collapsed = t.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.chars().take(limit).collect()
+    crate::text::board_text(s, limit)
 }
 
 /// Bytes received/sent in one tick to KiB/s. `dt` is floored like stats.py (1 ms).
@@ -620,7 +608,7 @@ mod tests {
         let util = gpu::sum_by_luid(&[(UTIL_INSTANCE.to_string(), 130.0)]);
         let mem = gpu::sum_by_luid(&[("luid_0x00000000_0x0000C2A0_phys_0".to_string(), 2.0 * GIB)]);
         let state = gpu::reading(&util, &mem, &adapters);
-        assert_eq!(state.name, "AMD Radeon - RX 7800");
+        assert_eq!(state.name, "AMD Radeon \u{2013} RX 7800");
         assert_eq!(
             state.fields,
             Some(GpuFields {
@@ -638,12 +626,12 @@ mod tests {
     }
 
     #[test]
-    fn ascii_fold_matches_text_py() {
+    fn ascii_fold_keeps_what_the_font_draws() {
         assert_eq!(
             ascii_fold("Caf\u{00E9}\u{2019}s  CPU\t\u{2014}  x", 40),
-            "Caf's CPU - x"
+            "Caf\u{00E9}\u{2019}s CPU \u{2014} x"
         );
-        assert_eq!(ascii_fold("\u{2026}", 40), "...");
+        assert_eq!(ascii_fold("\u{2026}", 40), "\u{2026}");
         assert_eq!(ascii_fold("abcdef", 3), "abc");
         assert_eq!(ascii_fold("", 40), "");
     }

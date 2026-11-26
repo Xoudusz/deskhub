@@ -78,45 +78,10 @@ fn title_case(s: &str) -> String {
     out
 }
 
-/// Accented Latin letters and the ASCII base that NFKD would leave behind.
-const LATIN_BASE: &[(&str, char)] = &[
-    ("ÀÁÂÃÄÅ", 'A'),
-    ("àáâãäå", 'a'),
-    ("Ç", 'C'),
-    ("ç", 'c'),
-    ("ÈÉÊË", 'E'),
-    ("èéêë", 'e'),
-    ("ÌÍÎÏ", 'I'),
-    ("ìíîï", 'i'),
-    ("Ñ", 'N'),
-    ("ñ", 'n'),
-    ("ÒÓÔÕÖ", 'O'),
-    ("òóôõö", 'o'),
-    ("ÙÚÛÜ", 'U'),
-    ("ùúûü", 'u'),
-    ("Ý", 'Y'),
-    ("ýÿ", 'y'),
-];
-
-/// Port of companion/deskhub/text.py ascii_fold: the hub's fonts are ASCII only.
+/// Text the board can draw, at most `limit` bytes (crate::text::board_text): Latin-1
+/// letters such as ä ö ü ß stay, other letters fold to their base, emoji are dropped.
 pub fn ascii_fold(s: &str, limit: usize) -> String {
-    let mut mapped = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\u{2018}' | '\u{2019}' => mapped.push('\''),
-            '\u{201C}' | '\u{201D}' => mapped.push('"'),
-            '\u{2013}' | '\u{2014}' | '\u{00B7}' | '\u{2022}' => mapped.push('-'),
-            '\u{2026}' => mapped.push_str("..."),
-            c if c.is_ascii() => mapped.push(c),
-            c => {
-                if let Some((_, base)) = LATIN_BASE.iter().find(|(set, _)| set.contains(c)) {
-                    mapped.push(*base);
-                }
-            }
-        }
-    }
-    let collapsed = mapped.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.chars().take(limit).collect()
+    crate::text::board_text(s, limit)
 }
 
 /// Friendly source name from a session's app id (media.py _source_name).
@@ -587,7 +552,8 @@ mod tests {
     #[test]
     fn ascii_fold_maps_punctuation_and_latin() {
         let s = "Caf\u{e9} \u{2026}\u{2019}s \u{201c}x\u{201d} \u{2013} y \u{4e2d}";
-        assert_eq!(ascii_fold(s, 120), "Cafe ...'s \"x\" - y");
+        // Latin-1 and the font's punctuation stay; CJK is dropped.
+        assert_eq!(ascii_fold(s, 120), "Caf\u{e9} \u{2026}\u{2019}s \u{201c}x\u{201d} \u{2013} y");
         assert_eq!(ascii_fold("abcdef", 3), "abc");
         assert_eq!(ascii_fold("", 3), "");
     }

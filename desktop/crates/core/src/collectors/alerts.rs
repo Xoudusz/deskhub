@@ -230,56 +230,10 @@ pub fn pick(
     })
 }
 
-/// Fold text to ASCII for the board's fonts, collapse whitespace and cut to `limit` chars.
+/// Text the board can draw, at most `limit` bytes (crate::text::board_text): Latin-1
+/// letters such as ä ö ü ß stay, other letters fold to their base, emoji are dropped.
 pub fn ascii_fold(s: &str, limit: usize) -> String {
-    let mut folded = String::new();
-    for c in s.chars() {
-        fold_char(c, &mut folded);
-    }
-    folded
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(limit)
-        .collect()
-}
-
-/// Typographic punctuation and common Latin letters map to ASCII; other non-ASCII is dropped.
-fn fold_char(c: char, out: &mut String) {
-    let s = match c {
-        '\u{2018}' | '\u{2019}' => "'",
-        '\u{201C}' | '\u{201D}' => "\"",
-        '\u{2013}' | '\u{2014}' | '\u{00B7}' | '\u{2022}' => "-",
-        '\u{2026}' => "...",
-        'à'..='å' => "a",
-        'À'..='Å' => "A",
-        'ç' => "c",
-        'Ç' => "C",
-        'è'..='ë' => "e",
-        'È'..='Ë' => "E",
-        'ì'..='ï' => "i",
-        'Ì'..='Ï' => "I",
-        'ñ' => "n",
-        'Ñ' => "N",
-        'ò'..='ö' | 'ø' => "o",
-        'Ò'..='Ö' | 'Ø' => "O",
-        'ù'..='ü' => "u",
-        'Ù'..='Ü' => "U",
-        'ý' | 'ÿ' => "y",
-        'Ý' => "Y",
-        'ß' => "ss",
-        'æ' => "ae",
-        'Æ' => "AE",
-        'œ' => "oe",
-        'Œ' => "OE",
-        _ if c.is_ascii() => {
-            out.push(c);
-            return;
-        }
-        _ => return,
-    };
-    out.push_str(s);
+    crate::text::board_text(s, limit)
 }
 
 /// Alert bookkeeping: what was dismissed, what the board shows. Pure; `run` feeds it.
@@ -680,7 +634,7 @@ mod tests {
     fn folds_text_for_the_board() {
         assert_eq!(
             ascii_fold("Caf\u{e9}  \u{201C}ok\u{201D}\n\tnow\u{2026}", 120),
-            "Cafe \"ok\" now..."
+            "Caf\u{e9} \u{201C}ok\u{201D} now\u{2026}"
         );
         assert_eq!(
             ascii_fold("\u{4e2d}x", 120),
