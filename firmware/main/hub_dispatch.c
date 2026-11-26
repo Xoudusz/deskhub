@@ -268,7 +268,7 @@ static void on_printer(const cJSON *m)
 static void on_layout(const cJSON *m)
 {
     static const char *names[] = {"home", "stats", "ai", "calendar", "weather", "media", "printer", "shortcuts", "timer", "games", "network",
-                                  "github"};
+                                  "github", "plex"};
     uint32_t mask = 1; // Home is always shown
     uint8_t order[32];
     int n = 0;

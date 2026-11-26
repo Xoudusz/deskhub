@@ -130,16 +130,27 @@ async fn wait_for_token(app: &AppHandle, run: u64, client_id: &str, pin: i64) ->
             .ok()
             .filter(|r| r.len() == 1)
             .and_then(|mut r| r.pop());
-        let saved = update_media_server(app, |m| {
-            m.signed_in = true;
-            m.server_id = only.as_ref().map(|r| r.id.clone()).unwrap_or_default();
-            m.server_name = only.as_ref().map(|r| r.name.clone()).unwrap_or_default();
-        });
+        let state = app.state::<App>();
+        let mut next = state.settings();
+        next.media_server.signed_in = true;
+        next.media_server.server_id = only.as_ref().map(|r| r.id.clone()).unwrap_or_default();
+        next.media_server.server_name = only.as_ref().map(|r| r.name.clone()).unwrap_or_default();
+        show_plex_page(&mut next.pages.enabled);
+        let saved = state.apply(app, next).map(|_| ());
         return match saved {
             Ok(()) => Some(Outcome { state: "done", message: String::new() }),
             Err(e) => err(e),
         };
     }
+}
+
+/// Turns the board's Plex page on (right after Now playing) when signing in.
+fn show_plex_page(enabled: &mut Vec<String>) {
+    if enabled.iter().any(|p| p == "plex") {
+        return;
+    }
+    let at = enabled.iter().position(|p| p == "media").map_or(enabled.len(), |i| i + 1);
+    enabled.insert(at, "plex".to_string());
 }
 
 #[tauri::command]

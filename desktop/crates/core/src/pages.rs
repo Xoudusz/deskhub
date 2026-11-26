@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::settings::{GridItem, NightStyle, Settings, DIM_DEFAULT};
 
-/// Every page the board knows, pages.py ALL_PAGES.
+/// Every page the board knows, pages.py ALL_PAGES (plus "plex": the desktop app only).
 pub const ALL_PAGES: &[&str] = &[
     "home",
     "stats",
@@ -22,6 +22,7 @@ pub const ALL_PAGES: &[&str] = &[
     "games",
     "network",
     "github",
+    "plex",
 ];
 
 /// Navigation order, pages.py DEFAULT_ORDER (Shortcuts last).
@@ -32,6 +33,7 @@ pub const DEFAULT_ORDER: &[&str] = &[
     "calendar",
     "weather",
     "media",
+    "plex",
     "printer",
     "timer",
     "games",

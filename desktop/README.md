@@ -107,14 +107,18 @@ The board token lives in Windows Credential Manager ("Desk Hub" / "board-token",
 `settings.json` keeps it blank once the store holds it. `get_settings` still returns it.
 ```
 
-The Plex collector asks plex.tv for the server's addresses and connects to its local HTTPS
-`*.plex.direct` address, pinned to the LAN IP (no DNS lookup, so DNS-rebind protection doesn't
-matter), with the server's own token only. No plain-HTTP fallback (Linux dev builds, which lack TLS, use HTTP). It polls `/status/sessions` every 3 s while
+The Plex collector asks plex.tv for the server's addresses and tries its HTTPS `*.plex.direct`
+addresses (local first, then remote; never relays), each pinned to its IP (no DNS lookup, so
+DNS-rebind protection doesn't matter), with the server's own token only. It keeps the first
+whose `/identity` is the chosen server: a server on Docker's host network also lists its bridge
+addresses (172.x) as local. When none answers, `media_server` carries `error` (every address
+tried and why), which the Media section shows; the board ignores it. Signing in adds the
+board's `plex` page to `pages.enabled`. No plain-HTTP fallback (Linux dev builds, which lack TLS, use HTTP). It polls `/status/sessions` every 3 s while
 anything plays (15 s idle, 60 s after a failure) and sends `media_server` JSON plus an `ARS1`
 poster (128x192, letterboxed). Everyone on the server counts; one session shows, playing first
 and sticky, with "(+N more)". Read-only: no seek or play/pause.
 
-Pages known to the board: home, stats, ai, calendar, weather, media, printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
+Pages known to the board: home, stats, ai, calendar, weather, media, plex (desktop app only), printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
 
 ## deskhub-cli sidecar
 

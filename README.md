@@ -54,7 +54,8 @@ The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windo
 | AI | Claude Code or Codex 5-hour and weekly limits with reset times, tokens today, a 7-day chart, usage per model | companion, from Claude Code or Codex |
 | Calendar | Up to 16 upcoming events, grouped by day, from the next 7 days or as many as you set | companion, from Google, Apple iCloud, Outlook or any ICS feed |
 | Weather | Current conditions, the next 24 hours and 6 days | the board itself, from [Open-Meteo](https://open-meteo.com) with the GeoSphere Austria model (ECMWF where it doesn't reach) |
-| Media | Whatever Windows lists as playing (Spotify, YouTube in a browser, VLC…) with the cover, a seek bar and controls. Next to it, what plays on your Plex server (everyone on it; one shows, "+N more"), or its version and library while idle: **Sign in with Plex** in the desktop app's Media section | companion, desktop app (Plex) |
+| Media | Whatever Windows lists as playing (Spotify, YouTube in a browser, VLC…) with the cover, a seek bar and controls | companion |
+| Plex | What plays on your Plex server (everyone on it; one shows, "+N more"), or its version and library while idle. **Sign in with Plex** in the desktop app's Media section; signing in turns this page on | desktop app |
 | Shortcuts | Up to 16 buttons: key combos, apps, folders, URLs, volume, media, lock PC | companion |
 | 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion, over the local network (Bambu also through its cloud) |
 | Games | The Steam game you're playing with its cover and session time, your five most recent games, and a tap to launch one (optional) | companion, from Steam's local files |

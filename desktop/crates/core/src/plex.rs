@@ -18,6 +18,8 @@ pub const TV: &str = "https://plex.tv/api/v2";
 pub const PRODUCT: &str = "Desk Hub";
 const TIMEOUT: Duration = Duration::from_secs(8);
 const TV_TIMEOUT: Duration = Duration::from_secs(15);
+/// Trying one of a server's addresses.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 /// Largest reply read (session lists and posters are far smaller).
 const MAX_BODY: usize = 8 * 1024 * 1024;
 /// Poster size asked from the server: twice the board's 128x192.
@@ -250,18 +252,30 @@ impl std::fmt::Debug for Conn {
     }
 }
 
-/// Picks how to reach `res` from this PC: its local HTTPS plex.direct address on builds
-/// with TLS (Windows), never plain HTTP there. Builds without TLS (Linux, dev only) use
-/// plain HTTP on the LAN address. Relayed and remote addresses are never used: the board
-/// and the server share a LAN. Only the server's own token is sent, never the account's.
-pub fn pick_connection(res: &Resource, client_id: &str, https: bool) -> Result<Conn> {
+/// Every way to reach `res` from this PC, best first. Builds with TLS (Windows): its
+/// HTTPS plex.direct addresses, local ones first, then remote ones (a router that loops
+/// back). Never plain HTTP there. Builds without TLS (Linux, dev only): plain HTTP on its
+/// addresses. Relays are never used. Only the server's own token is sent, never the
+/// account's. A server on Docker's host network also lists its bridge addresses
+/// (172.x) as local, so the caller tries them in order (`Conn::identity`).
+pub fn candidates(res: &Resource, client_id: &str, https: bool) -> Result<Vec<Conn>> {
     if res.access_token.is_empty() {
         bail!("plex.tv gave no access token for {}", res.name);
     }
-    let token = res.access_token.clone();
-    let local: Vec<&Connection> = res.connections.iter().filter(|c| c.local && !c.relay).collect();
-    if https {
-        for c in &local {
+    let mut ordered: Vec<&Connection> = res.connections.iter().filter(|c| !c.relay).collect();
+    ordered.sort_by_key(|c| !c.local); // stable: local first, plex.tv's order kept
+    let conn = |base: String, resolve| Conn {
+        base,
+        resolve,
+        token: res.access_token.clone(),
+        client_id: client_id.to_string(),
+    };
+    let mut out = Vec::new();
+    for c in ordered {
+        let Ok(ip) = c.address.parse::<IpAddr>() else {
+            continue;
+        };
+        if https {
             if c.protocol != "https" {
                 continue;
             }
@@ -272,38 +286,54 @@ pub fn pick_connection(res: &Resource, client_id: &str, https: bool) -> Result<C
                 continue;
             };
             let port = url.port().unwrap_or(c.port);
-            let resolve = c
-                .address
-                .parse::<IpAddr>()
-                .ok()
-                .map(|ip| (host.to_string(), SocketAddr::new(ip, port)));
-            return Ok(Conn {
-                base: format!("https://{host}:{port}"),
-                resolve,
-                token,
-                client_id: client_id.to_string(),
-            });
+            let base = format!("https://{host}:{port}");
+            if !out.iter().any(|o: &Conn| o.base == base) {
+                out.push(conn(base, Some((host.to_string(), SocketAddr::new(ip, port)))));
+            }
+        } else {
+            let host = match ip {
+                IpAddr::V6(ip) => format!("[{ip}]"),
+                IpAddr::V4(_) => c.address.clone(),
+            };
+            let base = format!("http://{host}:{}", c.port);
+            if !out.iter().any(|o: &Conn| o.base == base) {
+                out.push(conn(base, None));
+            }
         }
-        bail!("{} has no secure local address (turn on Secure connections in Plex)", res.name);
     }
-    if let Some(c) = local.iter().find(|c| c.address.parse::<IpAddr>().is_ok()) {
-        let host = match c.address.parse::<IpAddr>() {
-            Ok(IpAddr::V6(ip)) => format!("[{ip}]"),
-            _ => c.address.clone(),
-        };
-        return Ok(Conn {
-            base: format!("http://{host}:{}", c.port),
-            resolve: None,
-            token,
-            client_id: client_id.to_string(),
-        });
+    if out.is_empty() {
+        if https {
+            bail!("{} has no secure address (turn on Secure connections in Plex)", res.name);
+        }
+        bail!("plex.tv lists no address for {}", res.name);
     }
-    bail!("plex.tv lists no address for {} on this network", res.name)
+    Ok(out)
 }
 
 impl Conn {
+    /// Where this goes, for messages: the address it is pinned to, else the base.
+    pub fn target(&self) -> String {
+        match &self.resolve {
+            Some((_, addr)) => addr.to_string(),
+            None => self.base.trim_start_matches("http://").to_string(),
+        }
+    }
+
+    /// The server's machine identifier (plex.tv's clientIdentifier), quickly: used to
+    /// find which listed address really is this server.
+    pub async fn identity(&self) -> Result<String> {
+        let client = self.client_with(PROBE_TIMEOUT)?;
+        let rb = client.get(format!("{}/identity", self.base));
+        let v = json_ok(plex_headers(rb, &self.client_id).send().await.map_err(send_err)?).await?;
+        Ok(v["MediaContainer"]["machineIdentifier"].as_str().unwrap_or_default().to_string())
+    }
+
     fn client(&self) -> Result<reqwest::Client> {
-        let mut b = reqwest::Client::builder().timeout(TIMEOUT).user_agent("deskhub");
+        self.client_with(TIMEOUT)
+    }
+
+    fn client_with(&self, timeout: Duration) -> Result<reqwest::Client> {
+        let mut b = reqwest::Client::builder().timeout(timeout).user_agent("deskhub");
         if let Some((host, addr)) = &self.resolve {
             b = b.resolve(host, *addr);
         }
@@ -628,43 +658,59 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn connection_prefers_local_plex_direct_https() {
+    fn candidates_are_secure_local_first_and_skip_relays() {
         let r = resource(json!([
             {"protocol": "https", "address": "203.0.113.9", "port": 32400,
              "uri": "https://203-0-113-9.abc.plex.direct:32400", "local": false},
             {"protocol": "https", "address": "10.0.0.1", "port": 443, "uri": "https://relay.plex.direct:443",
              "local": true, "relay": true},
+            {"protocol": "https", "address": "172.17.0.1", "port": 32400,
+             "uri": "https://172-17-0-1.abc.plex.direct:32400", "local": true},
             {"protocol": "https", "address": "192.168.68.103", "port": 32400,
-             "uri": "https://192-168-68-103.abc.plex.direct:32400", "local": true}
+             "uri": "https://192-168-68-103.abc.plex.direct:32400", "local": true},
+            {"protocol": "http", "address": "192.168.68.103", "port": 32400,
+             "uri": "http://192.168.68.103:32400", "local": true}
         ]));
-        let c = pick_connection(&r, "cid", true).unwrap();
-        assert_eq!(c.base, "https://192-168-68-103.abc.plex.direct:32400");
+        let c = candidates(&r, "cid", true).unwrap();
+        let bases: Vec<&str> = c.iter().map(|c| c.base.as_str()).collect();
+        assert_eq!(bases, [
+            "https://172-17-0-1.abc.plex.direct:32400",
+            "https://192-168-68-103.abc.plex.direct:32400",
+            "https://203-0-113-9.abc.plex.direct:32400",
+        ]);
         assert_eq!(
-            c.resolve,
+            c[1].resolve,
             Some(("192-168-68-103.abc.plex.direct".into(), "192.168.68.103:32400".parse().unwrap()))
         );
-        assert_eq!(c.token, "srv-token");
-        assert!(!format!("{c:?}").contains("srv-token"));
-        // Without TLS (Linux builds): plain HTTP on the LAN address.
-        let c = pick_connection(&r, "cid", false).unwrap();
-        assert_eq!(c.base, "http://192.168.68.103:32400");
-        assert_eq!(c.resolve, None);
+        assert_eq!(c[1].target(), "192.168.68.103:32400");
+        assert_eq!(c[1].token, "srv-token");
+        assert!(!format!("{:?}", c[1]).contains("srv-token"));
+        // Without TLS (Linux builds): plain HTTP on each address.
+        let c = candidates(&r, "cid", false).unwrap();
+        assert_eq!(c[0].base, "http://172.17.0.1:32400");
+        assert_eq!(c[1].base, "http://192.168.68.103:32400");
+        assert_eq!(c[1].resolve, None);
     }
 
     #[test]
-    fn connection_needs_a_local_address() {
-        let r = resource(json!([{"protocol": "https", "address": "203.0.113.9", "port": 32400,
-            "uri": "https://203-0-113-9.abc.plex.direct:32400", "local": false}]));
-        assert!(pick_connection(&r, "cid", true).is_err());
+    fn candidates_need_https_and_the_server_token() {
         let mut r = resource(json!([{"protocol": "http", "address": "192.168.1.5", "port": 32400,
             "uri": "http://192.168.1.5:32400", "local": true}]));
         // TLS builds never fall back to plain HTTP.
-        assert!(pick_connection(&r, "cid", true).is_err());
-        let c = pick_connection(&r, "cid", false).unwrap();
-        assert_eq!((c.base.as_str(), c.token.as_str()), ("http://192.168.1.5:32400", "srv-token"));
+        assert!(candidates(&r, "cid", true).is_err());
+        let c = candidates(&r, "cid", false).unwrap();
+        assert_eq!((c[0].base.as_str(), c[0].token.as_str()), ("http://192.168.1.5:32400", "srv-token"));
         // Never the account token: no server token, no connection.
         r.access_token.clear();
-        assert!(pick_connection(&r, "cid", false).is_err());
+        assert!(candidates(&r, "cid", false).is_err());
+        assert!(candidates(&resource(json!([])), "cid", false).is_err());
+    }
+
+    #[tokio::test]
+    async fn identity_names_the_server() {
+        let f = fake(vec![("/identity", 200, br#"{"MediaContainer": {"machineIdentifier": "srv1"}}"#.to_vec())]).await;
+        assert_eq!(conn(f.port).identity().await.unwrap(), "srv1");
+        assert!(conn(1).identity().await.is_err());
     }
 
     #[test]
