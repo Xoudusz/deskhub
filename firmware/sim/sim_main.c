@@ -96,6 +96,13 @@ EMSCRIPTEN_KEEPALIVE void sim_pair(const char *name) { ui_pair_show(name, "4821"
 // Shows the Home page (the app's Home builder previews it).
 EMSCRIPTEN_KEEPALIVE void sim_show_home(void) { ui_show_page(PAGE_HOME); }
 
+// Shows any page by index (PAGE_*, the order of the layout's page names): the README
+// screenshots (firmware/sim/shots) use it. Out-of-range indexes are ignored.
+EMSCRIPTEN_KEEPALIVE void sim_show_page(int page)
+{
+    if (page >= 0 && page < PAGE_COUNT) ui_show_page(page);
+}
+
 // A JSON message, as the board gets it over the WebSocket (no hello needed).
 EMSCRIPTEN_KEEPALIVE void sim_json(const char *text) { hub_dispatch_text(text); }
 

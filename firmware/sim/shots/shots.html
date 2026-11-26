@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Desk Hub screenshots</title>
+<!-- Driven by screenshots.py: loads the simulator (desktop/public/sim, built by
+     firmware/sim/build.sh) and exposes window.shots for the script. -->
+<style>body { margin: 0; background: #000; } canvas { display: block; }</style>
+</head>
+<body>
+<canvas id="c" width="800" height="480"></canvas>
+<script src="/desktop/public/sim/deskhub_sim.js"></script>
+<script>
+const W = 800, H = 480;
+const ctx = document.getElementById("c").getContext("2d");
+const image = ctx.createImageData(W, H);
+let mod = null;
+
+function feedOne(m, f) {
+  if ("json" in f) {
+    const p = m.stringToNewUTF8(JSON.stringify(f.json));
+    try { m._sim_json(p); } finally { m._free(p); }
+  } else {
+    const bytes = Uint8Array.from(atob(f.bin), c => c.charCodeAt(0));
+    const p = m._malloc(bytes.length);
+    try { m.HEAPU8.set(bytes, p); m._sim_binary(p, bytes.length); } finally { m._free(p); }
+  }
+}
+
+// Steps LVGL for `ms` milliseconds of real time, then paints the canvas.
+async function settle(ms) {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    mod._sim_step();
+    await new Promise(r => setTimeout(r, 16));
+  }
+  mod._sim_take_dirty();
+  const at = mod._sim_pixels();
+  image.data.set(mod.HEAPU8.subarray(at, at + W * H * 4));
+  ctx.putImageData(image, 0, 0);
+}
+
+window.shots = {
+  // A fresh instance fed `frames`. A nav or theme change makes the firmware "restart"
+  // (it throws); its settings live in JS, so the next instance starts with them.
+  async boot(frames) {
+    for (let tries = 0; tries < 4; tries++) {
+      const m = await createDeskhubSim({ print: () => {}, printErr: t => console.warn("sim:", t) });
+      try {
+        m._sim_init();
+        for (const f of frames) feedOne(m, f);
+        mod = m;
+        return;
+      } catch (e) {
+        if (!String(e).includes("deskhub-sim-restart")) throw e;
+      }
+    }
+    throw new Error("simulator keeps restarting");
+  },
+  feed(frames) { for (const f of frames) feedOne(mod, f); },
+  weather(body) {
+    const p = mod.stringToNewUTF8(body);
+    try { return mod._sim_weather(p); } finally { mod._free(p); }
+  },
+  show(page) { mod._sim_show_page(page); },
+  settle,
+};
+</script>
+</body>
+</html>

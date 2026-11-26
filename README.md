@@ -1,20 +1,23 @@
 # Desk Hub
 
-A desk display for the **Waveshare ESP32-S3-Touch-LCD-4.3B**. It shows the time, weather, your calendar, what's playing on your PC, CPU and GPU load, and your Claude Code usage. It also gives you a grid of buttons that run things on your PC.
+A desk display for the **Waveshare ESP32-S3-Touch-LCD-4.3B** or the **ESP32-P4-WIFI6-Touch-LCD-4.3**. It shows the time, weather, your calendar, what's playing on your PC, CPU and GPU load, and your Claude Code or Codex usage. It asks you to allow or deny a Claude Code permission, and it gives you a grid of buttons that run things on your PC.
 
-https://github.com/user-attachments/assets/2b18951c-0adb-42aa-9e92-08439c5763bc
+![A tour of the pages](docs/tour.gif)
 
-The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windows PC (`desktop/`) sends it PC data over your Wi-Fi; the older Python *companion* (`companion/`) still works too. The clock and weather keep working when the PC is off.
+The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windows PC (`desktop/`) sends it PC data over your Wi-Fi. The older Python *companion* (`companion/`) still works too; you only need it for 3D printers and Apple iCloud calendars. The clock, weather and timer keep working when the PC is off.
+
+The pictures come from the board's own UI running in the simulator with made-up data (`firmware/sim/shots`).
 
 | | |
 | --- | --- |
-| ![PC stats](docs/screenshots/stats.png) | ![Claude Code usage](docs/screenshots/ai.png) |
-| ![Calendar](docs/screenshots/calendar.png) | ![Now playing](docs/screenshots/media.png) |
-| ![3D printer](docs/screenshots/printer.png) | ![Shortcuts](docs/screenshots/shortcuts.png) |
-| ![Timer](docs/screenshots/timer.png) | ![Waiting alert](docs/screenshots/alert.png) |
-| ![Games](docs/screenshots/games.png) | ![Internet](docs/screenshots/network.png) |
-| ![Home](docs/screenshots/home.png) | ![GitHub](docs/screenshots/github.png) |
-| ![Weather](docs/screenshots/weather.png) | ![Codex usage](docs/screenshots/codex.png) |
+| ![Home](docs/screenshots/home.png) | ![Allow or deny a Claude Code permission](docs/screenshots/alert.png) |
+| ![PC stats](docs/screenshots/stats.png) | ![Internet](docs/screenshots/network.png) |
+| ![Claude Code usage](docs/screenshots/ai.png) | ![Codex usage](docs/screenshots/codex.png) |
+| ![Calendar](docs/screenshots/calendar.png) | ![Weather](docs/screenshots/weather.png) |
+| ![Now playing](docs/screenshots/media.png) | ![Plex](docs/screenshots/plex.png) |
+| ![Shortcuts](docs/screenshots/shortcuts.png) | ![Games](docs/screenshots/games.png) |
+| ![GitHub](docs/screenshots/github.png) | ![Timer](docs/screenshots/timer.png) |
+| ![3D printer](docs/screenshots/printer.png) | |
 
 ## Contents
 
@@ -50,22 +53,23 @@ The board runs custom firmware (ESP-IDF + LVGL). The *desktop app* on your Windo
 | Page | What it shows | Where the data comes from |
 | --- | --- | --- |
 | Home | Clock, date, Claude limits, next events, weather, now playing, CPU/GPU/RAM | everything below |
-| PC stats | CPU, GPU, RAM and VRAM gauges, GPU temperature, a one-minute history chart, network and disk | companion |
-| AI | Claude Code or Codex 5-hour and weekly limits with reset times, tokens today, a 7-day chart, usage per model | companion, from Claude Code or Codex |
+| PC stats | CPU, GPU, RAM and VRAM gauges, GPU temperature, a one-minute history chart, network and disk | desktop app |
+| AI | Claude Code or Codex 5-hour and weekly limits with reset times, tokens today, a 7-day chart, usage per model | desktop app, from Claude Code or Codex |
 | Calendar | Up to 16 upcoming events, grouped by day, from the next 7 days or as many as you set | desktop app (Settings > Calendar & GitHub: Outlook, Google or any .ics link) or the companion (also Apple iCloud CalDAV) |
 | Weather | Current conditions, the next 24 hours and 6 days | the board itself, from [Open-Meteo](https://open-meteo.com) with the GeoSphere Austria model (ECMWF where it doesn't reach) |
-| Media | Whatever Windows lists as playing (Spotify, YouTube in a browser, VLC…) with the cover, a seek bar and controls | companion |
+| Media | Whatever Windows lists as playing (Spotify, YouTube in a browser, VLC…) with the cover, a seek bar and controls | desktop app |
 | Plex | What plays on your Plex server (everyone on it; one shows, "+N more"), or its version and library while idle. **Sign in with Plex** in the desktop app's Media section; signing in turns this page on | desktop app |
-| Shortcuts | Up to 16 buttons: key combos, apps, folders, URLs, volume, media, lock PC | companion |
-| 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion, over the local network (Bambu also through its cloud) |
-| Games | The Steam game you're playing with its cover and session time, your five most recent games, and a tap to launch one (optional) | companion, from Steam's local files |
-| Stats: Internet view | Online status, latency, jitter and packet loss with a one-minute chart, uptime and the last drop, data used today and this month, and an on-demand speed test | desktop app (Settings > Connection > Internet) or the companion |
+| Shortcuts | Up to 16 buttons: key combos, apps, folders, URLs, volume, media, lock PC | desktop app |
+| 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion only, over the local network (Bambu also through its cloud) |
+| Games | The Steam game you're playing with its cover and session time, your five most recent games, and a tap to launch one (optional) | desktop app, from Steam's local files |
+| Stats: Internet view | Online status, latency, jitter and packet loss with a one-minute chart, uptime and the last drop, data used today and this month, and an on-demand speed test | desktop app (Settings > Connection > Internet) |
 | Timer | Countdown with presets from 1 to 45 minutes, pause and reset, and a full-screen "Time's up" card. The time left shows on its sidebar tab | the board itself, works without the PC |
-| GitHub | Your contribution chart for the whole year with month and weekday labels, contributions by kind, your current and longest streak and best day, this week against last week day by day, and your top repositories by commits; plus a Home widget (optional) | companion, from GitHub's API with your token |
+| GitHub | Your contribution chart for the whole year with month and weekday labels, contributions by kind, your current and longest streak and best day, this week against last week day by day, and your top repositories by commits; plus a Home widget (optional) | desktop app (Settings > Calendar & GitHub), from GitHub's API with your token |
 
 Home is a 5 × 3 grid you arrange yourself, with widgets in the sizes you choose ([Customizing Home](#customizing-home)). Beyond the pages:
 
-- [Waiting alerts](#waiting-alerts) show when a Claude Code session needs a permission or a reply.
+- [Waiting alerts](#waiting-alerts) show when a Claude Code session needs a permission or a reply; tap ✓ or ✕ to allow or deny a permission from the board.
+- The P4 board has a speaker: a chime for alerts, the timer and calendar reminders (desktop app: Settings > Sound).
 - The board goes dark or shows a dim clock while the PC's screen sleeps or during night hours ([When the PC sleeps](#when-the-pc-sleeps)).
 - New firmware goes over Wi-Fi and installs only after you tap the board ([Updating the firmware](#updating-the-firmware)).
 - The companion can start hidden with Windows, with an icon in the notification area ([Start the companion with Windows](#start-the-companion-with-windows)).
@@ -360,6 +364,8 @@ cp sdkconfig.local.example sdkconfig.local   # then fill in Wi-Fi, token and cit
 `out/p4rev3/deskhub-merged.bin` is the whole flash image; write it once over USB (the **USB TO UART** port) with `uvx esptool --chip esp32p4 -p COM5 write_flash 0x0 out/p4rev3/deskhub-merged.bin`. After that, `out/p4rev3/deskhub.bin` updates the board over Wi-Fi like on the 4.3B. CI builds all three variants (`s3`, `p4rev1`, `p4rev3`) on every push.
 
 If the picture is upside down, or taps land on the wrong side, turn on `HUB_ROTATION_270` or `HUB_TOUCH_ROTATE_180` in `sdkconfig.local` and build again.
+
+The P4 has a speaker. It plays a sound when an agent waits for you, when the timer ends and before a calendar event starts. Choose each sound, the volume and the reminder time, or mute it, in the desktop app under Settings > Sound; **Test** plays a sound right away. The 4.3B has no speaker.
 
 ## Steam
 

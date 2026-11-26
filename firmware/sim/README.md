@@ -8,7 +8,7 @@ simulated preview. Same code as the board: only the platform underneath is repla
 - `sim_stubs.c`: display/net/hub_server/ota/hubcfg for the browser. Anything the board
   would send to the PC (shortcuts, media keys, Steam launch, speedtest) is dropped.
 - `sim_main.c`: 800x480 RGB565 display flushed into an RGBA buffer, pointer input, and the
-  exports the app calls (`sim_json`, `sim_binary`, `sim_pointer`, `sim_weather*`, ...).
+  exports the app calls (`sim_json`, `sim_binary`, `sim_pointer`, `sim_weather*`, `sim_show_page`, ...).
 - `build.sh`: builds in the pinned `emscripten/emsdk` image; fetches LVGL and cJSON by tag;
   writes `desktop/public/sim/deskhub_sim.{js,wasm}` (not committed).
 
@@ -17,3 +17,17 @@ simulated preview. Same code as the board: only the platform underneath is repla
 A restart on the board (new theme, nav side or location) throws `deskhub-sim-restart` out of
 the call; the app then starts a fresh instance and feeds it the current state again. NVS
 lives in a JS map (`globalThis.__deskhubSimNvs`) so it survives that.
+
+## README screenshots
+
+`shots/` makes `docs/screenshots/*.png` and `docs/tour.gif` from the simulator, so the
+pictures always match the firmware. `shots/screenshots.py` builds made-up board messages
+(no real names, calendars or addresses), opens `shots/shots.html` in headless Chromium with
+the clock fixed, shows each page (`sim_show_page`) and saves it. Build the simulator first:
+
+    bash firmware/sim/build.sh
+    pip install playwright pillow && playwright install chromium
+    python3 firmware/sim/shots/screenshots.py
+
+Change the sample data or the page list in `screenshots.py`, run it again and look at every
+picture before committing.
