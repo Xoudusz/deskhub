@@ -63,6 +63,8 @@ jobs:
         with:
           workspaces: desktop -> target
           cache-on-failure: true
+          # Same key as desktop-release.yml: a release tag reads this cache from main.
+          shared-key: desktop-windows
       - run: npm ci
       - uses: actions/download-artifact@v4
         with:

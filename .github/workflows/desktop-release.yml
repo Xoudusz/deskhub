@@ -64,6 +64,10 @@ jobs:
         with:
           workspaces: "desktop -> target"
           cache-on-failure: true
+          # main's Windows installer job saves this key; a tag can read main's caches.
+          # Saving it here would be wasted: no later run reads a tag's cache.
+          shared-key: desktop-windows
+          save-if: false
 
       - run: npm ci
       - uses: actions/download-artifact@v4
