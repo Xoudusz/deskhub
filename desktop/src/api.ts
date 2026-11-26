@@ -37,6 +37,7 @@ export type Settings = {
   media_server: MediaServer;
   sound: Sound;
   calendar: { feeds: CalendarFeed[]; days: number };
+  internet: { show_ip: boolean; speedtest_hours: number };
   imported: boolean;
 };
 
@@ -214,6 +215,7 @@ const mock: Settings = {
   media_server: { signed_in: false, server_id: "", server_name: "", client_id: "deskhub-mock" },
   sound: { mute: false, volume: 60, alert: "chime", timer: "bell", reminder: "chime", remind_minutes: 5 },
   calendar: { feeds: [], days: 7 },
+  internet: { show_ip: false, speedtest_hours: 0 },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };

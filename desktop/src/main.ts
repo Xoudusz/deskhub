@@ -935,7 +935,17 @@ function connectionHtml(): string {
     ...(pairNote ? [text(pairNote)] : []),
     row("Config file", `<button type="button" data-act="import">${icon("refresh-cw", 13)}Import from config.toml</button>`,
       S.imported ? "Already imported" : "Copies host and token from the Python companion's config"),
-  ].join("")) + usbHtml() + firmwareHtml();
+  ].join("")) + internetHtml() + usbHtml() + firmwareHtml();
+}
+
+/** The board's Internet page: latency, data used and speed tests run by the app. */
+function internetHtml(): string {
+  const n = S.internet;
+  return card("Internet", "The board's Network page", [
+    row("Show public IP", tgl(`data-k="netIp"`, n.show_ip), "Looked up at speed.cloudflare.com every 30 minutes"),
+    row("Automatic speed test", `every <input class="num" type="number" min="0" max="168" step="1" data-k="netHours" value="${n.speedtest_hours}"> h`,
+      "0 = only when you tap Test on the board. Each test uses about 35 MB"),
+  ].join(""));
 }
 
 // Pairing (Board card): the code shown while the board's prompt is open.
@@ -1103,7 +1113,7 @@ function aboutHtml(): string {
     TAURI ? row("Updates", `<button type="button" data-act="update-check"${updChecking ? " disabled" : ""}>${icon("refresh-cw", 13)}Check now</button>`,
       "New versions download in the background; the button at the top installs them") : "",
     text("Replaces the Python companion for media, PC stats, Claude usage, shortcuts and games."),
-    text("Printers and internet still need the Python companion. Don't run both at once."),
+    text("Printers still need the Python companion. Don't run both at once."),
   ].join(""));
 }
 
@@ -1392,6 +1402,12 @@ main.addEventListener("change", e => {
       const i = Number(t.dataset.i);
       const field = k === "calName" ? "name" : k === "calUrl" ? "url" : "color";
       saveFeeds(S.calendar.feeds.map((f, j) => (j === i ? { ...f, [field]: t.value.trim() } : f)));
+      return;
+    }
+    case "netIp": void save({ internet: { show_ip: on } }); return;
+    case "netHours": {
+      const v = Math.max(0, Math.min(168, Number(t.value) || 0));
+      void save({ internet: { speedtest_hours: v } });
       return;
     }
     case "calDays": {

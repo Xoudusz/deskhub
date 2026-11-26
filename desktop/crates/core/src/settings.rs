@@ -34,6 +34,8 @@ pub struct Settings {
     pub sound: Sound,
     /// .ics feeds for the Calendar page (collectors/calendar.rs).
     pub calendar: Calendar,
+    /// The Internet page (collectors/net.rs).
+    pub internet: Internet,
     /// config.toml was imported once.
     pub imported: bool,
 }
@@ -72,6 +74,7 @@ impl Default for Settings {
             media_server: MediaServer::default(),
             sound: Sound::default(),
             calendar: Calendar::default(),
+            internet: Internet::default(),
             imported: false,
         }
     }
@@ -153,6 +156,16 @@ impl Default for Calendar {
     fn default() -> Self {
         Self { feeds: Vec::new(), days: 7 }
     }
+}
+
+/// Internet page options (config.toml [internet]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Internet {
+    /// Show the public IP address (looked up at speed.cloudflare.com every 30 minutes).
+    pub show_ip: bool,
+    /// Run a speed test every this many hours (0 = only when tapped on the board).
+    pub speedtest_hours: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1030,6 +1043,7 @@ mod tests {
                 "games",
                 "home",
                 "imported",
+                "internet",
                 "location",
                 "media_server",
                 "pages",
