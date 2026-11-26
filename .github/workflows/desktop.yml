@@ -70,6 +70,9 @@ jobs:
         with:
           name: board-sim
           path: desktop/public/sim
+      # Windows-only code (cfg(windows): collectors, cli procs/statusline) is tested here;
+      # the Core tests job runs on Linux. The release workflow doesn't test again.
+      - run: cargo test -p deskhub-core -p deskhub-cli
       # deskhub-cli ships next to the app (Claude Code status line + hooks); Tauri wants
       # sidecars named with the target triple.
       - run: cargo build --release -p deskhub-cli
