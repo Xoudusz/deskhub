@@ -20,7 +20,7 @@ use std::time::Duration;
 use serde_json::{json, Map, Value};
 
 use super::Ctx;
-use claude::Claude;
+pub use claude::Claude;
 use codex::Codex;
 use time::{day_of, now_ms, DAY_MS, HOUR_MS};
 
@@ -30,11 +30,15 @@ const BLOCK_MS: i64 = 5 * HOUR_MS;
 const LIVE_RECENT_MS: i64 = 15 * 60 * 1000;
 
 /// One token-usage record from either provider. Only counts, model name and time are kept.
-struct Usage {
-    ts: i64,
-    model: String,
-    total: i64,
-    output: i64,
+/// A record from a server (collectors/remote.rs) sums one hour: `ts` is the hour start and
+/// `n` its message count; local records are single messages (`n` = 1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Usage {
+    pub ts: i64,
+    pub model: String,
+    pub total: i64,
+    pub output: i64,
+    pub n: i64,
 }
 
 /// Collector state, moved into the blocking thread and back on every tick.
@@ -68,6 +72,8 @@ pub async fn run(ctx: Ctx) {
             _ => "auto",
         };
         let st = state.take().unwrap_or_else(State::new);
+        // Claude Code on a server (Settings > AI): hourly records merged into the numbers.
+        let remote = ctx.remote.borrow().usage.clone();
         let live = if ai.live_limits && agent != "codex" {
             let now = now_ms();
             let active = now - claude_last * 1000 < LIVE_RECENT_MS;
@@ -82,7 +88,7 @@ pub async fn run(ctx: Ctx) {
             let codex_on =
                 agent == "codex" || (agent == "auto" && cdir.as_deref().is_some_and(Path::is_dir));
             let claude = (agent != "codex")
-                .then(|| st.claude.snapshot(st.home.as_deref(), now, live.as_ref()));
+                .then(|| st.claude.snapshot(st.home.as_deref(), now, live.as_ref(), &remote));
             let codex = codex_on.then(|| st.codex.snapshot(cdir.as_deref(), now));
             (st, claude, codex)
         });
@@ -155,7 +161,7 @@ fn summary(usage: &[Usage], now: i64) -> Map<String, Value> {
         if day == today {
             tokens += u.total;
             output += u.output;
-            messages += 1;
+            messages += u.n;
             match models.iter_mut().find(|(name, _)| *name == u.model) {
                 Some((_, total)) => *total += u.total,
                 None => models.push((u.model.clone(), u.total)),

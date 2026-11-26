@@ -682,6 +682,21 @@ This copies a small `hook_bridge.py` to `~/.deskhub/` and appends hooks to `~/.c
 
 Privacy: the hooks store only the session state, the project folder name and Claude's notification text (like "Claude needs your permission to use Bash") in `~/.deskhub/claude_sessions/`. Prompts and tool input are never read or saved. It works for terminal and desktop-app sessions that load the hooks in `~/.claude/settings.json`. Turn it off with `alerts = false` under `[claude]` in `config.toml`.
 
+### Claude Code on a server
+
+The desktop app can also show Claude Code sessions that run on a Linux server, for example a home server you SSH into. Their alerts are labelled with the server's name ("vibecode - deskhub") and have no Show button, because there is no window on your PC to bring forward. Their token usage is added to the PC's on the AI page. The 5-hour and weekly limits still come from the PC, so use the same Claude account on both.
+
+On the server, build and install `deskhub-cli` and `deskhub-relay` (from `desktop/`, `cargo build --release -p deskhub-cli -p deskhub-core --bins`), then:
+
+```bash
+deskhub-relay install-hooks          # adds deskhub-cli's hooks to ~/.claude/settings.json
+DESKHUB_RELAY_TOKEN=<random, 16+ characters> DESKHUB_RELAY_BIND=192.168.1.10:8791 deskhub-relay serve
+```
+
+Run `serve` as a service (a systemd unit with `EnvironmentFile=` holding those variables). In the app, open Settings > AI > Claude Code on a server, and enter `http://192.168.1.10:8791` and the token. The status row says when it's connected and how many sessions it sees.
+
+The relay sends only session state, project folder name, Claude's notification text and hourly token counts per model. It speaks plain HTTP with a token, so use it only on your own network or over a VPN.
+
 ## Shortcuts
 
 To set up the buttons, run:
@@ -749,7 +764,7 @@ The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion conn
 | `location` | `city`, `lat`, `lon` (decimal strings), `tz` (POSIX), `fahrenheit`, `h24`. Saved on the board; it restarts when they change. Sent by the desktop app once you edit the Location card. |
 | `home` | `header` (time and date in a top bar) and `grid`, a list of `widget`, `x`, `y`, `w`, `h`. Also `left` and `right` columns of widget names, which firmware from before the grid uses instead. Sent right after `layout`. |
 | `pc_power` | `asleep`: whether the PC's screen is off or the PC is going to sleep. Sent after each connect and when it changes. |
-| `alert` | A Claude Code session waiting for you: `id`, `kind` (`permission` or `input`), `agent`, `title`, `detail` and `project`; or `clear: true` when nothing is waiting. |
+| `alert` | A Claude Code session waiting for you: `id`, `kind` (`permission` or `input`), `agent`, `title`, `detail` and `project` (and `focus: false` for a session on a server: the board hides Show); or `clear: true` when nothing is waiting. |
 | `tile_state` | `on`, the indexes of toggle buttons that are on (mic muted, speakers muted). Sent when it changes. |
 | `printer` | `printers` (up to 4) with `name`, `model`, `online`, `state`, `pct`, `remaining_min`, `layer`/`layers`, `file`, temperatures, `speed`, `error` and `ams`. Sent when something changes, and at least every 30 seconds. |
 | `net` | `online`, `latency_ms`, `jitter_ms`, `loss_pct`, `hist` (last 60 probes in ms, -1 = lost), `up_since`, `last_drop`, `today_bytes`, `month_bytes`, `speed`, `testing` and `ip`. Sent every 2 seconds. |

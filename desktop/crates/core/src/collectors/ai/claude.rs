@@ -61,6 +61,7 @@ impl ClaudeLog {
             model: model.into(),
             total: input + output + cache_create + cache_read,
             output,
+            n: 1,
         });
     }
 }
@@ -82,8 +83,9 @@ fn family(model: &str) -> &'static str {
 }
 
 impl Claude {
-    /// The Claude part of the "ai" message. `home` is the user's home dir; `now` is epoch ms.
-    pub fn snapshot(&mut self, home: Option<&Path>, now: i64, live: Option<&Value>) -> Value {
+    /// Reads new transcript lines under `home`/.claude/projects and drops records older
+    /// than the history window. Returns the records, sorted by time.
+    pub fn scan(&mut self, home: Option<&Path>, now: i64) -> &[Usage] {
         if let Some(home) = home {
             let log = &mut self.log;
             self.tail
@@ -94,14 +96,31 @@ impl Claude {
         prune(&mut self.log.usage, now);
         let horizon = super::horizon(now);
         self.log.seen.retain(|_, ts| *ts >= horizon);
-        let usage = &self.log.usage;
+        &self.log.usage
+    }
+
+    /// The Claude part of the "ai" message. `home` is the user's home dir; `now` is epoch ms.
+    /// `remote`: a server's hourly records, counted with this PC's (never stored here).
+    pub fn snapshot(&mut self, home: Option<&Path>, now: i64, live: Option<&Value>, remote: &[Usage]) -> Value {
+        self.scan(home, now);
+        let merged;
+        let usage: &[Usage] = if remote.is_empty() {
+            &self.log.usage
+        } else {
+            let horizon = super::horizon(now);
+            let mut all = self.log.usage.clone();
+            all.extend(remote.iter().filter(|u| u.ts >= horizon).cloned());
+            all.sort_by_key(|u| u.ts);
+            merged = all;
+            &merged
+        };
         let limits = claude_limits(home, now, live);
         let block = match current_block(usage, now) {
             Some(start) => {
                 let (tokens, messages) = usage
                     .iter()
                     .filter(|u| u.ts >= start)
-                    .fold((0_i64, 0_i64), |(t, m), u| (t + u.total, m + 1));
+                    .fold((0_i64, 0_i64), |(t, m), u| (t + u.total, m + u.n));
                 json!({
                     "active": true,
                     "start": start / 1000,
@@ -290,7 +309,7 @@ mod tests {
             &status.to_string(),
         );
 
-        let snap = Claude::default().snapshot(Some(home.as_path()), NOW_MS, None);
+        let snap = Claude::default().snapshot(Some(home.as_path()), NOW_MS, None, &[]);
         let expected = json!({
             "limits": {
                 "five_hour": {"pct": 42.3, "reset": NOW_S + 3600},
@@ -317,9 +336,31 @@ mod tests {
     }
 
     #[test]
+    fn a_servers_hours_count_with_this_pcs() {
+        let dir = temp_dir("claude-remote");
+        let hour = floor_hour(NOW_MS - 30 * 60 * 1000);
+        let remote = [
+            Usage { ts: hour, model: "Sonnet".into(), total: 900, output: 90, n: 4 },
+            // The last activity: counts nothing, moves last_active.
+            Usage { ts: NOW_MS - 60 * 1000, model: String::new(), total: 0, output: 0, n: 0 },
+        ];
+        let mut c = Claude::default();
+        let snap = c.snapshot(Some(dir.as_path()), NOW_MS, None, &remote);
+        assert_eq!(snap["today"], json!({"tokens": 900, "output": 90, "messages": 4}));
+        assert_eq!(snap["block"]["messages"], 4);
+        assert_eq!(snap["block"]["start"], hour / 1000);
+        assert_eq!(snap["last_active"], NOW_S - 60);
+        assert_eq!(snap["models"], json!([{"name": "Sonnet", "tokens": 900}]));
+        // Not kept: the next snapshot without the server counts nothing.
+        let snap = c.snapshot(Some(dir.as_path()), NOW_MS, None, &[]);
+        assert_eq!(snap["today"]["messages"], 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn no_transcripts_gives_idle_snapshot() {
         let dir = temp_dir("claude-empty");
-        let snap = Claude::default().snapshot(Some(dir.as_path()), NOW_MS, None);
+        let snap = Claude::default().snapshot(Some(dir.as_path()), NOW_MS, None, &[]);
         assert_eq!(snap["block"], json!({"active": false}));
         assert_eq!(snap["days"], json!([0, 0, 0, 0, 0, 0, 0]));
         assert_eq!(snap["limits"], json!({}));
@@ -334,6 +375,7 @@ mod tests {
             model: "Opus".into(),
             total: 1,
             output: 0,
+            n: 1,
         };
         let start = floor_hour(NOW_MS - 6 * 3600 * 1000);
         // Last message 6 h ago: the window opened then has closed.

@@ -1312,6 +1312,7 @@ pub async fn run(ctx: Ctx) {
         out,
         mut settings,
         mut incoming,
+        ..
     } = ctx;
     let (art_tx, art_rx) = watch::channel(ArtRequest::default());
     tokio::spawn(art_worker(out.clone(), art_rx));

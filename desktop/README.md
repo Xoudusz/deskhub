@@ -68,6 +68,7 @@ type Settings = {
     live_limits: boolean;        // opt-in: 5-hour/weekly limits from Anthropic's usage endpoint with Claude Code's sign-in (~/.claude/.credentials.json; token never logged or sent to the board), default false
     alerts: boolean;             // "Claude is waiting" alerts, default true
     idle_alert_seconds: number;  // default 30
+    remote_url: string;          // deskhub-relay of a server ("" = off); its token: remote_token_set (credential store "remote-claude-token")
   };
   tiles: {                       // Shortcuts page, max 16; default = config.example.toml tiles
     label: string; icon: string; color: string;   // icon: a board icon name, color "#rrggbb"
@@ -119,6 +120,15 @@ poster (128x192, letterboxed). Everyone on the server counts; one session shows,
 and sticky, with "(+N more)". Read-only: no seek or play/pause.
 
 Pages known to the board: home, stats, ai, calendar, weather, media, plex (desktop app only), printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
+
+## Claude Code on a server
+
+`crates/core/src/relay.rs` (binary `deskhub-relay`, runs on the server) serves
+`GET /v1/sessions` and `GET /v1/usage?rev=N` (hourly buckets per model) with a Bearer
+token. `collectors/remote.rs` polls it every 2 s (usage every 10 s) and shares the result
+through `Ctx.remote`: `alerts` merges the sessions as `r-<id>` with `focus: false` (the
+board hides Show), `ai` adds the hours to the PC's usage. Commands: `remote_token_set(token)`,
+`remote_status()`.
 
 ## deskhub-cli sidecar
 

@@ -114,6 +114,9 @@ pub struct Ai {
     pub alerts: bool,
     /// An idle session raises an alert after this many seconds.
     pub idle_alert_seconds: i64,
+    /// Claude Code on a server: its deskhub-relay, e.g. "http://192.168.68.107:8791"
+    /// ("" = none). The token is in the credential store (secrets::REMOTE_TOKEN).
+    pub remote_url: String,
 }
 
 impl Default for Ai {
@@ -123,6 +126,7 @@ impl Default for Ai {
             live_limits: false,
             alerts: true,
             idle_alert_seconds: 30,
+            remote_url: String::new(),
         }
     }
 }
