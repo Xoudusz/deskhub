@@ -247,6 +247,17 @@ async fn board_tap(state: tauri::State<'_, App>, x: i64, y: i64) -> Result<(), S
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Play a sound on the board's speaker now (Settings > Sound "Test"), even when muted.
+#[tauri::command]
+fn sound_test(state: tauri::State<'_, App>, sound: String) -> Result<(), String> {
+    let svc = state.service.as_ref().ok_or("The board service isn't running")?;
+    svc.send(serde_json::json!({
+        "type": "sound_test",
+        "sound": deskhub_core::pages::sound_name(&sound),
+    }));
+    Ok(())
+}
+
 // ---- first setup: USB cable and pairing ---------------------------------------
 
 /// One USB command at a time (the port can be opened once).
@@ -630,6 +641,7 @@ pub fn run() {
             get_status,
             board_screenshot,
             board_tap,
+            sound_test,
             board_firmware,
             firmware_check,
             sim_state,

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use log::warn;
 use serde_json::{json, Value};
 
-use crate::settings::{GridItem, NightStyle, Settings, DIM_DEFAULT};
+use crate::settings::{GridItem, NightStyle, Settings, DIM_DEFAULT, SOUNDS};
 
 /// Every page the board knows, pages.py ALL_PAGES (plus "plex": the desktop app only).
 pub const ALL_PAGES: &[&str] = &[
@@ -210,7 +210,20 @@ pub fn layout_message(s: &Settings) -> Value {
             _ => s.display.night_brightness.clamp(0, 100),
         },
         "seconds": s.display.clock_seconds,
+        "sound": {
+            "mute": s.sound.mute,
+            "volume": s.sound.volume.clamp(0, 100),
+            "alert": sound_name(&s.sound.alert),
+            "timer": sound_name(&s.sound.timer),
+            "reminder": sound_name(&s.sound.reminder),
+            "remind_min": s.sound.remind_minutes.clamp(0, 120),
+        },
     })
+}
+
+/// A sound name the board knows, else "off".
+pub fn sound_name(name: &str) -> &'static str {
+    SOUNDS.iter().find(|n| **n == name).copied().unwrap_or("off")
 }
 
 /// Why each grid entry cannot be used (empty = all fine), pages.py grid_problem.
@@ -391,8 +404,30 @@ mod tests {
                 "brightness": 100,
                 "night_brightness": 0,
                 "seconds": false,
+                "sound": {
+                    "mute": false,
+                    "volume": 60,
+                    "alert": "chime",
+                    "timer": "bell",
+                    "reminder": "chime",
+                    "remind_min": 5,
+                },
             })
         );
+    }
+
+    #[test]
+    fn layout_sound_clamped_and_checked() {
+        let mut s = Settings::default();
+        s.sound.volume = 250;
+        s.sound.remind_minutes = -3;
+        s.sound.alert = "trumpet".into();
+        s.sound.timer = "beep".into();
+        let m = layout_message(&s);
+        assert_eq!(m["sound"]["volume"], 100);
+        assert_eq!(m["sound"]["remind_min"], 0);
+        assert_eq!(m["sound"]["alert"], "off");
+        assert_eq!(m["sound"]["timer"], "beep");
     }
 
     #[test]

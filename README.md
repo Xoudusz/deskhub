@@ -762,7 +762,8 @@ The board runs a WebSocket server at `ws://deskhub.local/ws`. The companion conn
 | binary | `ARS1`: like `ART1`, the server's poster (128x192, letterboxed on black). Sent before the `media_server` message that names it. |
 | `events` | Up to 16 events with `title`, `loc`, `cal`, `start`/`end` (Unix time), `all_day`, `color`. |
 | `tiles` | Up to 16 buttons with `label`, `icon`, `color`. |
-| `layout` | `pages`, the page names to show; `nav` (`left`, `right` or `bottom`); `pc_sleep` (`off`, `clock` or `none`); `night_start`/`night_end` (minutes after midnight, -1 = no night mode) and `night_style` (`off` or `clock`). Sent right after `hello_ok`. |
+| `layout` | `pages`, the page names to show; `nav` (`left`, `right` or `bottom`); `pc_sleep` (`off`, `clock` or `none`); `night_start`/`night_end` (minutes after midnight, -1 = no night mode) and `night_style` (`off` or `clock`); `sound` (P4 board speaker): `mute`, `volume` (0-100), `alert`, `timer`, `reminder` (each `off`, `chime`, `bell`, `beep` or `soft`) and `remind_min` (calendar reminder, minutes before the start, 0-120). The board keeps `sound` in NVS. Sent right after `hello_ok`. |
+| `sound_test` | `sound`: one of the names above. Plays it now, even when muted (Settings > Sound "Test"). The S3 board ignores it. |
 | `location` | `city`, `lat`, `lon` (decimal strings), `tz` (POSIX), `fahrenheit`, `h24`. Saved on the board; it restarts when they change. Sent by the desktop app once you edit the Location card. |
 | `home` | `header` (time and date in a top bar) and `grid`, a list of `widget`, `x`, `y`, `w`, `h`. Also `left` and `right` columns of widget names, which firmware from before the grid uses instead. Sent right after `layout`. |
 | `pc_power` | `asleep`: whether the PC's screen is off or the PC is going to sleep. Sent after each connect and when it changes. |

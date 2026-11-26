@@ -1,3 +1,4 @@
+#include "audio.h"
 #include "hubcfg.h"
 #include "ui.h"
 
@@ -863,6 +864,13 @@ static void page_none(lv_obj_t *page)
     (void)page;   // the Internet view is built by stats_create()
 }
 
+// Calendar reminders (sounds.c).
+static void sound_tick_cb(lv_timer_t *t)
+{
+    (void)t;
+    sounds_tick();
+}
+
 void ui_init(void)
 {
     g_font_14 = inter(14, false, &lv_font_montserrat_14);
@@ -925,6 +933,7 @@ void ui_init(void)
     apply_layout();
     ui_show_page(PAGE_HOME);
     lv_timer_create(tick_cb, 1000, NULL);
+    lv_timer_create(sound_tick_cb, 1000, NULL);
     tick_cb(NULL);
 }
 

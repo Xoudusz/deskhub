@@ -24,6 +24,7 @@ Commands (`invoke`):
 | `get_status` | – | `Status` |
 | `board_screenshot` | – | `string`: PNG as a `data:image/png;base64,...` URL (800x480) |
 | `board_tap` | `{ x: number, y: number }` (board pixels, 0-799 / 0-479) | `null` |
+| `sound_test` | `{ sound: string }` | `null`: sends `sound_test` to the board (unknown names play nothing); errors when the board service isn't running |
 | `sim_state` | – | `SimFrame[]`: every frame the board would get on connect (layout, home, then the published state, binary first; the board's own location while the app sets none). `SimFrame = { json: object } \| { bin: string /* base64 ART1/STM1 */ }` |
 | `autostart_get` / `autostart_set` | – / `{ on: boolean }` | `boolean`: Start with Windows (enabled on first run) |
 | `firmware_check` | – | `{ latest: string \| null, update_available: boolean, blocked: string \| null, error: string \| null }`: newest `firmware-latest/firmware.json` release for the connected board |
@@ -89,6 +90,14 @@ type Settings = {
     server_id: string;           // plex.tv clientIdentifier of the chosen server
     server_name: string;
     client_id: string;           // X-Plex-Client-Identifier, made once per install
+  };
+  sound: {                       // P4 board speaker (layout "sound"); Settings > Sound
+    mute: boolean;
+    volume: number;              // 0-100, default 60
+    alert: string;               // "off" | "chime" | "bell" | "beep" | "soft"; Claude Code alerts, default "chime"
+    timer: string;               // timer done, default "bell"
+    reminder: string;            // calendar reminder, default "chime"
+    remind_minutes: number;      // 0-120, default 5 (0 = at the start)
   };
   imported: boolean;             // config.toml already imported once
 };

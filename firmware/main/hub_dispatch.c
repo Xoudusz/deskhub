@@ -1,6 +1,7 @@
 // Board messages -> UI: the JSON handlers and the art frames, shared by the WebSocket
 // server (hub_server.c) and the desktop app's simulator (firmware/sim). Each handler takes
 // display_lock() itself.
+#include "audio.h"
 #include "hub_dispatch.h"
 
 #include <math.h>
@@ -295,6 +296,8 @@ static void on_layout(const cJSON *m)
     else if (!strcmp(nav, "bottom")) ui_set_nav(2);
     // "seconds": the Home clock shows seconds (absent = off, as older companions).
     ui_set_clock_seconds(get_bool(m, "seconds"));
+    const cJSON *snd = cJSON_GetObjectItemCaseSensitive(m, "sound");
+    if (cJSON_IsObject(snd)) sounds_set(snd);
     display_unlock();
     // "pc_sleep": what the board does while the PC's display sleeps: "off" | "clock" | "none".
     char sleep[8];
@@ -583,6 +586,10 @@ void hub_dispatch_json(const cJSON *m, const char *type)
     if (strcmp(type, "stats") == 0) on_stats(m);
     else if (strcmp(type, "media") == 0) on_media(m);
     else if (strcmp(type, "media_server") == 0) on_media_server(m);
+    else if (strcmp(type, "sound_test") == 0) {
+        const cJSON *s = cJSON_GetObjectItemCaseSensitive(m, "sound");
+        if (cJSON_IsString(s)) sounds_test(s->valuestring);
+    }
     else if (strcmp(type, "events") == 0) on_events(m);
     else if (strcmp(type, "tiles") == 0) on_tiles(m);
     else if (strcmp(type, "ai") == 0 || strcmp(type, "claude") == 0) on_claude(m);

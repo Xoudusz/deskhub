@@ -1,16 +1,17 @@
 # One board file per target: board.c for the ESP32-S3 4.3B, board_p4.c for the
 # ESP32-P4 4.3 (its Wi-Fi comes from esp_wifi_remote, which provides esp_wifi).
 if(IDF_TARGET STREQUAL "esp32p4")
-    set(board_src "board_p4.c")
-    set(board_requires esp_driver_ledc esp_hw_support)
+    set(board_src "board_p4.c" "audio.c")
+    set(board_requires esp_driver_ledc esp_hw_support esp_driver_i2s)
 else()
-    set(board_src "board.c")
+    # No speaker codec on the S3 board: sounds are no-ops.
+    set(board_src "board.c" "audio_none.c")
     set(board_requires "")
 endif()
 
 idf_component_register(
     SRCS "main.c" "${board_src}" "hubcfg.c" "wifi_store.c" "display.c" "net.c" "hub_server.c" "hub_dispatch.c" "weather.c" "weather_data.c"
-         "ui.c" "ui_home.c" "ui_stats.c" "ui_media.c" "ui_calendar.c" "ui_weather.c" "ui_shortcuts.c" "ui_claude.c" "ui_printer.c" "ui_alert.c" "ui_timer.c" "ui_games.c" "ui_net.c" "ui_github.c" "ui_saver.c" "ui_update.c" "ui_wifi.c" "ui_pair.c" "ota.c" "pair.c" "usb_setup.c" "logos.c" "lv_mem_psram.c"
+         "ui.c" "ui_home.c" "ui_stats.c" "ui_media.c" "ui_calendar.c" "ui_weather.c" "ui_shortcuts.c" "ui_claude.c" "ui_printer.c" "ui_alert.c" "ui_timer.c" "ui_games.c" "ui_net.c" "ui_github.c" "ui_saver.c" "ui_update.c" "ui_wifi.c" "ui_pair.c" "ota.c" "pair.c" "usb_setup.c" "logos.c" "lv_mem_psram.c" "sounds.c"
     INCLUDE_DIRS "."
     EMBED_FILES "fonts/MaterialIcons-Regular.ttf" "fonts/Inter-Medium.ttf" "fonts/Inter-SemiBold.ttf"
     REQUIRES esp_lcd esp_driver_i2c esp_driver_gpio esp_wifi esp_netif esp_event nvs_flash

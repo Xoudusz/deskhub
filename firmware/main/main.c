@@ -1,3 +1,4 @@
+#include "audio.h"
 #include "board.h"
 #include "display.h"
 #include "esp_heap_caps.h"
@@ -22,6 +23,7 @@ void app_main(void)
     hubcfg_load();   // Wi-Fi networks, token and location: NVS, seeded from a local build
 
     ESP_ERROR_CHECK(board_init());
+    audio_init();   // speaker codec on the touch's I2C bus (P4 board; no-op elsewhere)
     // Wi-Fi first, so its internal-RAM buffers are allocated before the UI grows.
     net_start();
     ESP_ERROR_CHECK(display_start());
