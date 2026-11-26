@@ -52,3 +52,8 @@ bool board_touch_read(uint16_t *x, uint16_t *y);
 // Copies the current frame as 800x480 RGB565 in UI orientation. The caller
 // holds the display lock.
 bool board_snapshot(uint16_t *dst);
+#if CONFIG_IDF_TARGET_ESP32P4
+// The I2C master bus of the touch panel (i2c_master_bus_handle_t), shared with
+// the speaker codec (audio.c).
+void *board_i2c_bus(void);
+#endif

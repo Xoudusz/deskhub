@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio.h"
 #include "display.h"
 #include "esp_timer.h"
 #include "icons.h"
@@ -85,6 +86,7 @@ static void tick_cb(lv_timer_t *t)
         lv_timer_pause(s_tick);
         refresh();
         show_done();
+    sounds_event(SOUND_EV_TIMER);
         return;
     }
     refresh();

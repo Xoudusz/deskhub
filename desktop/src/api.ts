@@ -32,8 +32,13 @@ export type Settings = {
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   media_server: MediaServer;
+  sound: Sound;
   imported: boolean;
 };
+
+export type SoundName = "off" | "chime" | "bell" | "beep" | "soft";
+/** The P4 board's speaker: a sound per event (settings.rs Sound). */
+export type Sound = { mute: boolean; volume: number; alert: SoundName; timer: SoundName; reminder: SoundName; remind_minutes: number };
 
 /** "Sign in with Plex" state; the account token itself stays in the credential store. */
 export type MediaServer = { signed_in: boolean; server_id: string; server_name: string; client_id: string };
@@ -203,6 +208,7 @@ const mock: Settings = {
   games: { steam: true, presets: true, presets_disabled: [], custom: [] },
   location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },
   media_server: { signed_in: false, server_id: "", server_name: "", client_id: "deskhub-mock" },
+  sound: { mute: false, volume: 60, alert: "chime", timer: "bell", reminder: "chime", remind_minutes: 5 },
   imported: false,
 };
 let mockStatus: Status = { state: "searching", host: "deskhub.local", detail: "Looking for deskhub.local", firmware: null, since: null };
@@ -279,6 +285,11 @@ export const api = {
     if (TAURI) await listen("sim-resync", () => cb());
   },
   boardScreenshot: (): Promise<string> => (TAURI ? invoke<string>("board_screenshot") : Promise.resolve("/mock-board.png")),
+  /** Play a sound on the board now (even when muted). */
+  soundTest: async (sound: string): Promise<void> => {
+    if (TAURI) await invoke("sound_test", { sound });
+    else console.info("[mock] sound_test", sound);
+  },
   boardTap: async (x: number, y: number): Promise<void> => {
     if (TAURI) await invoke("board_tap", { x, y });
     else console.info("[mock] board_tap", x, y);

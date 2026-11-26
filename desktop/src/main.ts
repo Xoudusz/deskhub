@@ -8,13 +8,13 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, onPlex, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type SoundName, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 import { mountSim, onSimState, simState } from "./sim";
 
-type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "media" | "ai" | "appearance" | "connection" | "about";
-type SliderKey = "brightness" | "nightBrightness";
+type SectionId = "status" | "display" | "pages" | "shortcuts" | "games" | "media" | "ai" | "sound" | "appearance" | "connection" | "about";
+type SliderKey = "brightness" | "nightBrightness" | "volume";
 type Cell = Settings["home"]["grid"][number];
 
 const SECTIONS: [SectionId, string, string][] = [
@@ -25,6 +25,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["games", "gamepad", "Games"],
   ["media", "film", "Media"],
   ["ai", "sparkles", "AI agents"],
+  ["sound", "volume-2", "Sound"],
   ["appearance", "palette", "Appearance"],
   ["connection", "wifi", "Connection"],
   ["about", "info", "About"],
@@ -40,6 +41,7 @@ const DOT: Record<Status["state"], string> = { connected: "good", searching: "wa
 const SLIDER_SPEC: Record<SliderKey, { label: string; min: number; max: number }> = {
   brightness: { label: "Brightness", min: 1, max: 100 },
   nightBrightness: { label: "Night brightness", min: 0, max: 100 },
+  volume: { label: "Volume", min: 0, max: 100 },
 };
 
 const main = document.getElementById("main") as HTMLElement;
@@ -58,13 +60,16 @@ const timers = new Map<string, number>();
 /** Don't redraw under the user's fingers: a field being typed into, a time picked, a slider dragged, an open select. */
 const busy = () => !!document.activeElement?.matches("input:not([type=checkbox]), select");
 
-const sliderValue = (k: SliderKey) => (k === "brightness" ? S.display.brightness : S.display.night_brightness);
+const sliderValue = (k: SliderKey) =>
+  k === "brightness" ? S.display.brightness : k === "volume" ? S.sound.volume : S.display.night_brightness;
 const setSliderLocal = (k: SliderKey, v: number) => {
   if (k === "brightness") S.display.brightness = v;
+  else if (k === "volume") S.sound.volume = v;
   else S.display.night_brightness = v;
 };
 const sliderPatch = (k: SliderKey, v: number): SettingsPatch =>
-  k === "brightness" ? { display: { brightness: v } } : { display: { night_brightness: v } };
+  k === "brightness" ? { display: { brightness: v } }
+    : k === "volume" ? { sound: { volume: v } } : { display: { night_brightness: v } };
 
 const fillRange = (el: HTMLInputElement) =>
   el.style.setProperty("--p", `${((+el.value - +el.min) / (+el.max - +el.min || 1)) * 100}%`);
@@ -200,6 +205,7 @@ function sectionHtml(): string {
     case "games": return gamesHtml();
     case "media": return mediaHtml();
     case "ai": return aiHtml();
+    case "sound": return soundHtml();
     case "appearance": return appearanceHtml();
     case "connection": return connectionHtml();
     case "about": return aboutHtml();
@@ -253,6 +259,31 @@ function displayHtml(): string {
       "The board restarts when this changes"),
   ].join(""));
   return brightness + clock + night + pc + locationHtml();
+}
+
+const SOUND_NAMES: [string, string][] = [["off", "Off"], ["chime", "Chime"], ["bell", "Bell"], ["beep", "Beep"], ["soft", "Soft"]];
+const SOUND_EVENTS: ["alert" | "timer" | "reminder", string, string][] = [
+  ["alert", "Claude Code alerts", "When Claude Code waits for you"],
+  ["timer", "Timer done", ""],
+  ["reminder", "Calendar reminders", "Needs a calendar source (the Python companion)"],
+];
+
+function soundHtml(): string {
+  const so = S.sound;
+  const spk = card("Speaker", "ESP32-P4 board only (the S3 board has no speaker)", [
+    row(`${icon(so.mute ? "volume-x" : "volume-2", 14)}Mute`, tgl(`data-k="soundMute"`, so.mute), "Test still plays when muted"),
+    slider("volume", "Volume", 0, 100, so.volume),
+  ].join(""));
+  const events = card("Sounds", "Which sound each event plays", [
+    ...SOUND_EVENTS.map(([k, label, hint]) =>
+      row(esc(label),
+        select(`data-k="sound" data-ev="${k}"`, SOUND_NAMES, so[k]) +
+          `<button type="button" data-act="sound-test" data-ev="${k}" ${so[k] === "off" ? "disabled" : ""}>${icon("volume-2", 13)}Test</button>`,
+        esc(hint))),
+    row("Remind before", `<input class="num" type="number" min="0" max="120" data-k="soundRemind" value="${so.remind_minutes}"> min`,
+      "0 = when the event starts"),
+  ].join(""));
+  return spk + events;
 }
 
 /** POSIX time zones for the board (Kconfig HUB_TZ format). */
@@ -1053,6 +1084,11 @@ async function act(el: HTMLElement) {
     case "preset-delete": deletePreset(); return;
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
+    case "sound-test": {
+      const ev = el.dataset.ev as "alert" | "timer" | "reminder";
+      api.soundTest(S.sound[ev]).catch(() => undefined);
+      return;
+    }
     case "preview":
       preview = el.dataset.v === "sim" ? "sim" : "live";
       render(true);
@@ -1276,6 +1312,17 @@ main.addEventListener("change", e => {
         .then(s => { remote = s; }, err => { remoteNote = String(err); })
         .finally(() => render(true));
       return;
+    case "soundMute": void save({ sound: { mute: on } }); return;
+    case "sound": {
+      const ev = t.dataset.ev as "alert" | "timer" | "reminder";
+      void save({ sound: { [ev]: t.value as SoundName } });
+      return;
+    }
+    case "soundRemind": {
+      const v = Math.max(0, Math.min(120, Math.round(Number(t.value) || 0)));
+      void save({ sound: { remind_minutes: v } });
+      return;
+    }
     case "aiIdle": {
       const v = Math.max(0, Math.min(3600, Math.round(Number(t.value) || 0)));
       void save({ ai: { idle_alert_seconds: v } });

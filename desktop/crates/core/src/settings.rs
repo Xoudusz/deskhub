@@ -30,6 +30,8 @@ pub struct Settings {
     pub games: Games,
     /// Plex server ("Sign in with Plex"); its token lives in the credential store.
     pub media_server: MediaServer,
+    /// The P4 board's speaker (layout "sound").
+    pub sound: Sound,
     /// config.toml was imported once.
     pub imported: bool,
 }
@@ -66,6 +68,7 @@ impl Default for Settings {
             tiles: default_tiles(),
             games: Games::default(),
             media_server: MediaServer::default(),
+            sound: Sound::default(),
             imported: false,
         }
     }
@@ -101,6 +104,40 @@ impl Default for Location {
         }
     }
 }
+
+/// Sounds on the board's speaker (ESP32-P4 board only). Each event names a sound:
+/// "off", "chime", "bell", "beep" or "soft" (firmware audio.h).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Sound {
+    pub mute: bool,
+    /// 0-100.
+    pub volume: i64,
+    /// Claude Code waiting alerts.
+    pub alert: String,
+    /// Timer done.
+    pub timer: String,
+    /// Calendar reminder.
+    pub reminder: String,
+    /// The calendar reminder plays this many minutes before an event (0 = at the start).
+    pub remind_minutes: i64,
+}
+
+impl Default for Sound {
+    fn default() -> Self {
+        Self {
+            mute: false,
+            volume: 60,
+            alert: "chime".into(),
+            timer: "bell".into(),
+            reminder: "chime".into(),
+            remind_minutes: 5,
+        }
+    }
+}
+
+/// Sound names the board knows; anything else is sent as "off".
+pub const SOUNDS: [&str; 5] = ["off", "chime", "bell", "beep", "soft"];
 
 /// Claude Code / Codex usage and waiting alerts (config.toml [ai] and [claude]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -966,6 +1003,7 @@ mod tests {
                 "location",
                 "media_server",
                 "pages",
+                "sound",
                 "tiles"
             ]
         );
@@ -1026,6 +1064,7 @@ mod tests {
                 "brightness": 100,
                 "night_brightness": 0,
                 "seconds": false,
+                "sound": {"mute": false, "volume": 60, "alert": "chime", "timer": "bell", "reminder": "chime", "remind_min": 5},
             })
         );
         // pages.py home_message(cfg): grid in file order, columns sorted by row.

@@ -16,3 +16,8 @@ dependencies:
     version: "0.14.*"
     rules:
       - if: "target == esp32p4"
+  # ES8311 speaker codec (audio.c), as in Waveshare's BSP for this board.
+  espressif/esp_codec_dev:
+    version: "~1.5"
+    rules:
+      - if: "target == esp32p4"

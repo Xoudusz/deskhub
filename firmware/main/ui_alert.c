@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio.h"
 #include "display.h"
 #include "hub_server.h"
 #include "icons.h"
@@ -303,7 +304,10 @@ void ui_set_alert(const hub_alert_t *a)
     fill(&s_home, a, true);
     fill(&s_ai, a, false);
     ui_rail_set_badge(PAGE_CLAUDE, strcmp(a->kind, "permission") == 0 ? COL_WARN : COL_ACCENT);
-    if (is_new) display_wake();
+    if (is_new) {
+        display_wake();
+        sounds_event(SOUND_EV_ALERT);
+    }
 }
 
 // Home re-lays out its widgets (e.g. when the clock width changes); keep the

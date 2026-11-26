@@ -94,6 +94,11 @@ static const st7701_lcd_init_cmd_t s_init_cmds[] = {
     {0x29, (uint8_t[]){0x00}, 0, 0},
 };
 
+void *board_i2c_bus(void)
+{
+    return s_bus;
+}
+
 static esp_err_t touch_init(void)
 {
     i2c_master_bus_config_t bus = {
