@@ -196,10 +196,10 @@ BEGIN:VEVENT\r\nUID:3\r\nSUMMARY:Holiday\r\nDTSTART;VALUE=DATE:20261201\r\nEND:V
     fn folds_text_and_drops_ended() {
         let ev = feed_events(ICS, "Work", "#ff0000", at(12), 7);
         let titles: Vec<&str> = ev.iter().map(|e| e.title.as_str()).collect();
-        assert!(titles.contains(&"\"Kick-off\" with Muller"));
+        assert!(titles.contains(&"\u{201C}Kick-off\u{201D} with M\u{00FC}ller"));
         assert!(!titles.contains(&"Over"));
-        let k = ev.iter().find(|e| e.title.starts_with('"')).unwrap();
-        assert_eq!((k.loc.as_str(), k.cal.as_str(), k.color.as_str()), ("Cafe", "Work", "#ff0000"));
+        let k = ev.iter().find(|e| e.title.starts_with('\u{201C}')).unwrap();
+        assert_eq!((k.loc.as_str(), k.cal.as_str(), k.color.as_str()), ("Caf\u{00E9}", "Work", "#ff0000"));
     }
 
     #[test]

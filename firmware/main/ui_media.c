@@ -256,13 +256,27 @@ static void set_text(lv_obj_t *label, const char *text)
     if (strcmp(lv_label_get_text(label), text) != 0) lv_label_set_text(label, text);
 }
 
+// Upper-case for the source labels: ASCII, and the Latin-1 letters (UTF-8 C3 A0..BE,
+// except the division sign) that the fonts have as capitals. ß and ÿ stay as they are.
+static void upper_utf8(char *s)
+{
+    for (unsigned char *p = (unsigned char *)s; *p; p++) {
+        if (*p < 0x80) {
+            *p = (unsigned char)toupper(*p);
+        } else if (*p == 0xC3 && p[1] >= 0xA0 && p[1] <= 0xBE && p[1] != 0xB7) {
+            p[1] -= 0x20;
+            p++;
+        }
+    }
+}
+
 // Fill a card with a session, or with `idle_*` lines when nothing plays.
 static void row_fill(media_row_t *r, const hub_media_t *m, const char *source,
                      const char *idle_title, const char *idle_sub, const char *idle_small)
 {
     char src[64];
     strlcpy(src, source, sizeof(src));
-    for (char *p = src; *p; p++) *p = toupper((unsigned char)*p);
+    upper_utf8(src);
     set_text(r->source, src);
     bool on = m->active;
     set_text(r->title, on ? m->title : idle_title);
@@ -448,7 +462,7 @@ void media_refresh(void)
 
     char src[32];
     strlcpy(src, m->source, sizeof(src));
-    for (char *p = src; *p; p++) *p = toupper((unsigned char)*p);
+    upper_utf8(src);
     lv_label_set_text(s_source, src);
     if (strcmp(lv_label_get_text(s_title), m->title) != 0) lv_label_set_text(s_title, m->title);
     lv_label_set_text(s_artist, m->artist);

@@ -23,11 +23,24 @@ static const char *TAG = "dispatch";
 
 // ---- helpers ---------------------------------------------------------------
 
+// Text is UTF-8 (the fonts have Latin-1: ä ö ü ß é ...). A copy cut short by the
+// buffer must not end in half a character, which would draw as garbage.
+static void utf8_trim(char *s)
+{
+    size_t len = strlen(s);
+    size_t i = len;
+    while (i > 0 && ((unsigned char)s[i - 1] & 0xC0) == 0x80) i--;   // continuation bytes
+    if (i == 0) return;
+    unsigned char lead = (unsigned char)s[i - 1];
+    size_t need = lead < 0x80 ? 1 : (lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1;
+    if (len - (i - 1) < need) s[i - 1] = 0;
+}
+
 static void copy_str(char *dst, size_t n, const cJSON *obj, const char *key)
 {
     const cJSON *v = cJSON_GetObjectItemCaseSensitive(obj, key);
     if (cJSON_IsString(v) && v->valuestring) {
-        strlcpy(dst, v->valuestring, n);
+        if (strlcpy(dst, v->valuestring, n) >= n) utf8_trim(dst);
     } else {
         dst[0] = 0;
     }

@@ -863,7 +863,7 @@ mod tests {
         let games = load_games(&cfg, &no_launch);
         assert_eq!(games.len(), 2);
         assert_eq!(games[0].title, "some window");
-        assert_eq!(games[1].name, "Gme");
+        assert_eq!(games[1].name, "G\u{e4}me");
         assert_eq!(games[1].id, game_id("Gäme"));
         assert_eq!(games[1].process, vec!["game.exe"]);
         assert_eq!(games[1].match_text, "mc");

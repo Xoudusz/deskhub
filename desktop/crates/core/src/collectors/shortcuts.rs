@@ -718,8 +718,8 @@ mod tests {
         let v = hub_view(std::slice::from_ref(&t));
         assert_eq!(v["type"], "tiles");
         let label = v["tiles"][0]["label"].as_str().unwrap();
-        assert_eq!(label.chars().count(), 30);
-        assert!(label.starts_with("Cafe - xxx"));
+        assert_eq!(label.len(), 30); // bytes: what the board's buffer holds
+        assert!(label.starts_with("Caf\u{e9} \u{2014} xxx"));
         assert_eq!(v["tiles"][0]["icon"], "lock");
         assert_eq!(v["tiles"][0]["color"], "#112233");
         assert_eq!(v["tiles"][0].as_object().unwrap().len(), 3);

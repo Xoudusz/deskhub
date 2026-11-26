@@ -156,6 +156,13 @@ interfaces, kept in `~/.deskhub/net_usage.json`, the companion's file), the last
 (speed.cloudflare.com: 25 MB down, 10 MB up; on the board's `speedtest`, at most one per 2 min,
 or every `speedtest_hours`) and, when `show_ip`, the public IP.
 
+Text for the board goes through `text::board_text` (every collector's `ascii_fold` calls it):
+the board's Inter fonts have ASCII, Latin-1 (ä ö ü ß é …) and some punctuation (€ “ ” „ – —
+…), so those stay; other Latin letters fold to their base (ł → l), combining marks join their
+letter when Latin-1 has the result, and anything else (emoji, CJK) is dropped. Limits are bytes,
+cut on a character boundary, because the board's buffers are byte arrays. The firmware's
+`copy_str` also trims a cut-off character. The Python companion still sends ASCII only.
+
 Pages known to the board: home, stats, ai, calendar, weather, media, plex (desktop app only), printer, shortcuts, timer, games, network, github. Home grid: 5 columns x 3 rows. Widgets and sizes follow `companion/deskhub/pages.py`.
 
 ## Claude Code on a server
