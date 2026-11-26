@@ -175,7 +175,8 @@ fn parse_time(p: &Prop) -> Option<When> {
 fn parse_value(value: &str, tzid: Option<&str>, date_only: bool) -> Option<When> {
     let v = value.trim();
     if date_only || v.len() == 8 {
-        let d = NaiveDate::parse_from_str(&v[..8.min(v.len())], "%Y%m%d").ok()?;
+        // get(): a feed can put any text here; a non-ASCII byte at 8 must not panic.
+        let d = NaiveDate::parse_from_str(v.get(..8).unwrap_or(v), "%Y%m%d").ok()?;
         return Some(When { at: local_at(Tz::LOCAL, d.and_hms_opt(0, 0, 0)?)?, all_day: true });
     }
     if let Some(utc) = v.strip_suffix('Z') {
@@ -432,5 +433,15 @@ BEGIN:VEVENT\r\nUID:x\r\nSUMMARY:Odd\r\nDTSTART:20261201T080000Z\r\nRRULE:FREQ=S
         assert_eq!(zone("W. Europe Standard Time").name(), "Europe/Berlin");
         assert_eq!(zone("Europe/Vienna").name(), "Europe/Vienna");
         assert!(zone("Some Custom Zone").is_local());
+    }
+
+    #[test]
+    fn junk_values_never_panic() {
+        for v in ["2026120\u{00E4}", "\u{00E4}\u{00E4}\u{00E4}\u{00E4}", "", "2026", "20261301T250000"] {
+            assert!(parse_value(v, None, true).is_none() || v.is_empty());
+            let _ = parse_value(v, Some("X"), false);
+        }
+        let body = "BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:2026120\u{00E4}\r\nRRULE:UNTIL=\u{00E4};FREQ=DAILY\r\nEND:VEVENT\r\n";
+        assert!(events_between(&wrap(body), 0, i64::MAX / 4).is_empty());
     }
 }
