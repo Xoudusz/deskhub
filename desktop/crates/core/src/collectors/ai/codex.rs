@@ -91,6 +91,7 @@ impl CodexLog {
             model: model_name(model),
             total,
             output,
+            n: 1,
         });
     }
 

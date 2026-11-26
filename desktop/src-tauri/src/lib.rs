@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 mod plex;
+mod remote;
 mod updates;
 
 use deskhub_core::claude_install;
@@ -511,7 +512,7 @@ pub fn run() {
             let (service, status) = if claim_companion_mutex() {
                 let svc = tauri::async_runtime::block_on(async {
                     let svc = Service::start(settings.clone());
-                    deskhub_core::collectors::start_all(&svc);
+                    remote::keep(deskhub_core::collectors::start_all(&svc));
                     svc
                 });
                 let status = svc.status().borrow().clone();
@@ -650,7 +651,9 @@ pub fn run() {
             plex::plex_sign_in_cancel,
             plex::plex_servers,
             plex::plex_select_server,
-            plex::plex_sign_out
+            plex::plex_sign_out,
+            remote::remote_token_set,
+            remote::remote_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building Desk Hub")

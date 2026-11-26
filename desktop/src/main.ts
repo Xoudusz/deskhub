@@ -7,7 +7,7 @@ import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, onPlex, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
-  type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
+  type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
   type Tile, type TileAction, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
@@ -757,13 +757,50 @@ function aiHtml(): string {
         "Adds Desk Hub's status line and hooks to Claude Code's settings (a backup is kept)"),
     ...(claudeNote ? [text(esc(claudeNote))] : []),
   ].join(""));
+  const r = remote;
+  const server = card("Claude Code on a server", "Alerts and usage from a deskhub-relay, e.g. on a home server", [
+    row("Relay address", `<input class="txt" data-k="aiRemoteUrl" value="${esc(a.remote_url)}" placeholder="http://192.168.1.10:8791" spellcheck="false">`,
+      "Empty = off. Plain HTTP: use it on your own network only"),
+    row("Token", `<input class="txt" type="password" data-k="aiRemoteToken" value="" placeholder="${r?.token_saved ? "Saved (type to replace)" : "DESKHUB_RELAY_TOKEN"}" autocomplete="off" spellcheck="false">`,
+      "Kept in Windows Credential Manager"),
+    ...(a.remote_url ? [remoteStatusRow()] : []),
+    ...(remoteNote ? [text(remoteNote)] : []),
+  ].join(""));
   const alerts = card("Alerts", "Shows on the board when Claude Code waits for you", [
     row("Waiting alerts", tgl(`data-k="aiAlerts"`, a.alerts)),
     row("Idle alert after", `<input class="num" type="number" min="0" max="3600" data-k="aiIdle" value="${a.idle_alert_seconds}"> s`,
       "An idle session alerts after this many seconds"),
   ].join(""));
-  return usage + cc + alerts;
+  return usage + cc + server + alerts;
 }
+
+// Claude Code on a server: the poller's status, asked every 3 s while the AI section is open.
+let remote: RemoteStatus | null = null;
+let remoteNote = "";
+
+function remoteStatusRow(): string {
+  const r = remote;
+  if (!r) return row("Status", "", "Checking the server");
+  if (!r.token_saved) return row(`${icon("x", 14)}No token`, "", "Enter the relay's token");
+  if (r.ok) {
+    const n = r.sessions === 1 ? "1 session" : `${r.sessions} sessions`;
+    return row(`${icon("check", 14)}Connected`, "", esc(`${r.host} - ${n}`));
+  }
+  return row(`${icon("x", 14)}Can't reach the relay`, "", esc(r.error || "No answer yet"));
+}
+
+function pollRemote() {
+  const key = (x: RemoteStatus | null) => JSON.stringify(x);
+  setInterval(() => {
+    if (section !== "ai") return;
+    api.remoteStatus().then(next => {
+      if (key(next) === key(remote)) return;
+      remote = next;
+      if (section === "ai") render(true);
+    }).catch(() => undefined);
+  }, 3000);
+}
+pollRemote();
 
 async function toggleClaude() {
   const linked = !!claude && claude.statusline && claude.hooks;
@@ -1225,6 +1262,19 @@ main.addEventListener("change", e => {
       return;
     case "aiAlerts":
       void save({ ai: { alerts: on } });
+      return;
+    case "aiRemoteUrl": {
+      const v = t.value.trim().replace(/\/+$/, "");
+      remoteNote = v && !/^https?:\/\/[^\s/]+$/.test(v) ? "Use an address like http://192.168.1.10:8791" : "";
+      if (!remoteNote) void save({ ai: { remote_url: v } });
+      else render(true);
+      return;
+    }
+    case "aiRemoteToken":
+      void api.remoteTokenSet(t.value)
+        .then(() => { remoteNote = ""; t.value = ""; return api.remoteStatus(); })
+        .then(s => { remote = s; }, err => { remoteNote = String(err); })
+        .finally(() => render(true));
       return;
     case "aiIdle": {
       const v = Math.max(0, Math.min(3600, Math.round(Number(t.value) || 0)));

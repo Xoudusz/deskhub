@@ -11,6 +11,8 @@ export type Widget = "clock" | "claude" | "events" | "weather" | "media" | "stat
 
 /** Claude Code wiring: status line and hooks point at deskhub-cli; cli = the helper exists. */
 export type ClaudeState = { statusline: boolean; hooks: boolean; cli: boolean };
+/** Claude Code on a server: the deskhub-relay poller (the token stays in the credential store). */
+export type RemoteStatus = { configured: boolean; token_saved: boolean; ok: boolean; error: string; host: string; sessions: number };
 
 export type Settings = {
   board: { host: string; token: string };
@@ -26,7 +28,7 @@ export type Settings = {
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
   location: Location;
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
-  ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number };
+  ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number; remote_url: string };
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   media_server: MediaServer;
@@ -191,7 +193,7 @@ const mock: Settings = {
     presets: [],
   },
   appearance: { theme: "midnight", board_theme: "same" },
-  ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30 },
+  ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30, remote_url: "" },
   tiles: [
     { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
     { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
@@ -258,6 +260,8 @@ setTimeout(() => {
 }, 1500);
 
 // ---- API ----
+let mockRemoteToken = false;
+
 export const api = {
   getSettings: (): Promise<Settings> => (TAURI ? invoke<Settings>("get_settings") : Promise.resolve(clone(mock))),
   setSettings: (patch: SettingsPatch): Promise<Settings> => (TAURI ? invoke<Settings>("set_settings", { patch }) : Promise.resolve(mockMerge(patch))),
@@ -356,6 +360,14 @@ export const api = {
     TAURI ? invoke<ClaudeState>("claude_status") : Promise.resolve({ statusline: false, hooks: false, cli: true }),
   claudeConnect: (on: boolean): Promise<ClaudeState> =>
     TAURI ? invoke<ClaudeState>("claude_connect", { on }) : Promise.resolve({ statusline: on, hooks: on, cli: true }),
+  remoteTokenSet: (token: string): Promise<void> => {
+    if (TAURI) return invoke<void>("remote_token_set", { token });
+    mockRemoteToken = token.trim() !== "";
+    return Promise.resolve();
+  },
+  remoteStatus: (): Promise<RemoteStatus> =>
+    TAURI ? invoke<RemoteStatus>("remote_status")
+      : Promise.resolve({ configured: mock.ai.remote_url !== "", token_saved: mockRemoteToken, ok: mock.ai.remote_url !== "" && mockRemoteToken, error: mockRemoteToken ? "" : "no token saved for the server", host: "vibecode", sessions: 1 }),
   /** Opens the Plex sign-in page; resolves with its address. The result comes via onPlex. */
   plexSignIn: async (): Promise<string> => {
     if (TAURI) return invoke<string>("plex_sign_in");

@@ -35,6 +35,8 @@ pub struct Session {
     pub updated: f64,
     /// Process ids of the session's ancestors (the windows that run it).
     pub pids: Vec<u32>,
+    /// The server it runs on ("" = this PC). Server sessions have no window to show.
+    pub host: String,
 }
 
 /// The alert shown on the board.
@@ -45,11 +47,13 @@ pub struct Alert {
     pub title: String,
     pub detail: String,
     pub project: String,
+    /// The board may offer Show (the session has a window on this PC).
+    pub focus: bool,
 }
 
 impl Alert {
     pub fn to_value(&self) -> Value {
-        json!({
+        let mut v = json!({
             "type": "alert",
             "id": self.id,
             "kind": self.kind,
@@ -57,7 +61,11 @@ impl Alert {
             "title": self.title,
             "detail": self.detail,
             "project": self.project,
-        })
+        });
+        if !self.focus {
+            v["focus"] = json!(false);
+        }
+        v
     }
 }
 
@@ -99,6 +107,7 @@ pub fn parse_session(text: &str) -> Option<Session> {
         project: str_of("project"),
         updated,
         pids,
+        host: String::new(),
     })
 }
 
@@ -185,12 +194,21 @@ pub fn pick(
     } else {
         (generic, "Finished. Waiting for your reply")
     };
+    // A server's session says where it runs: "vibecode - deskhub".
+    let project = if d.host.is_empty() {
+        d.project.clone()
+    } else if d.project.is_empty() {
+        d.host.clone()
+    } else {
+        format!("{} - {}", d.host, d.project)
+    };
     Some(Alert {
         id: sid.clone(),
         kind,
         title: ascii_fold(title, 60),
         detail: ascii_fold(detail, 120),
-        project: ascii_fold(&d.project, 40),
+        project: ascii_fold(&project, 40),
+        focus: d.host.is_empty(),
     })
 }
 
@@ -291,6 +309,11 @@ impl Tracker {
         }
     }
 
+    /// Whether `sid` is a server's session (nothing to show on this PC).
+    pub fn is_remote(&self, sid: &str) -> bool {
+        self.sessions.get(sid).is_some_and(|d| !d.host.is_empty())
+    }
+
     /// Hide the current alert for this session until its state changes.
     pub fn dismiss(&mut self, sid: &str) {
         if let Some(d) = self.sessions.get(sid) {
@@ -349,6 +372,7 @@ pub async fn run(ctx: Ctx) {
         out,
         mut settings,
         mut incoming,
+        remote,
     } = ctx;
     let root = sessions_dir();
     let mut tracker = Tracker::default();
@@ -379,7 +403,11 @@ pub async fn run(ctx: Ctx) {
         tokio::select! {
             _ = ticker.tick() => {
                 let now = now_secs();
-                let sessions = load_async(root.clone(), now).await;
+                let mut sessions = load_async(root.clone(), now).await;
+                // Claude Code on a server (Settings > AI), under ids of their own.
+                for (id, s) in &remote.borrow().sessions {
+                    sessions.insert(format!("r-{id}"), s.clone());
+                }
                 if let Some(msg) = tracker.poll(sessions, now, foreground_pid(), idle_after) {
                     out.publish(KEY, msg);
                 }
@@ -390,7 +418,10 @@ pub async fn run(ctx: Ctx) {
                     match action.as_str() {
                         "dismiss" => tracker.dismiss(&sid),
                         "focus" => {
-                            focus_async(root.clone(), sid.clone(), now_secs()).await;
+                            // A server's session has no window here: Show only dismisses.
+                            if !tracker.is_remote(&sid) {
+                                focus_async(root.clone(), sid.clone(), now_secs()).await;
+                            }
                             // Focusing counts as seen.
                             tracker.dismiss(&sid);
                         }
@@ -516,6 +547,7 @@ mod tests {
             project: project.into(),
             updated: NOW - age,
             pids: pids.to_vec(),
+            host: String::new(),
         }
     }
 
@@ -553,6 +585,23 @@ mod tests {
         );
         assert!(parse_session("[1,2]").is_none(), "not an object");
         assert!(parse_session("not json").is_none());
+    }
+
+    #[test]
+    fn server_sessions_are_labelled_and_have_no_show() {
+        let mut s = sess("permission", 5.0, "Claude needs your permission to use Bash", "deskhub", &[]);
+        s.host = "vibecode".into();
+        let mut t = Tracker::default();
+        let msg = t
+            .poll(map(vec![("r-x", s.clone())]), NOW, 0, 30.0)
+            .expect("an alert");
+        assert_eq!(msg["project"], "vibecode - deskhub");
+        assert_eq!(msg["focus"], false);
+        assert!(t.is_remote("r-x"));
+        assert!(!t.is_remote("nope"));
+        s.project.clear();
+        let a = pick(&map(vec![("r-x", s)]), NOW, 30.0, &HashMap::new()).unwrap();
+        assert_eq!(a.project, "vibecode");
     }
 
     #[test]
@@ -603,9 +652,11 @@ mod tests {
                 title: "Claude needs your permission to use Bash".into(),
                 detail: "".into(),
                 project: "alpha".into(),
+                focus: true,
             }
         );
         assert_eq!(m.to_value()["agent"], "claude");
+        assert!(m.to_value().get("focus").is_none());
     }
 
     #[test]

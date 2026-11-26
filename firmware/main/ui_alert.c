@@ -16,6 +16,7 @@
 
 typedef struct {
     lv_obj_t *root, *logo, *kind, *project, *title, *detail;
+    lv_obj_t *show, *later;   // Show on PC (hidden for a server's session), dismiss
 } panel_t;
 
 static panel_t s_home, s_ai;
@@ -146,10 +147,10 @@ static void build_home(lv_obj_t *host)
     lv_obj_set_height(p->detail, 20);
     lv_obj_align(p->detail, LV_ALIGN_LEFT_MID, 52, 12);
 
-    lv_obj_t *show = round_btn(p->root, 40, true, ICON_OPEN_IN_NEW, on_focus);
-    lv_obj_align(show, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_t *close = round_btn(p->root, 40, false, ICON_CLOSE, on_dismiss);
-    lv_obj_align(close, LV_ALIGN_RIGHT_MID, -48, 0);
+    p->show = round_btn(p->root, 40, true, ICON_OPEN_IN_NEW, on_focus);
+    lv_obj_align(p->show, LV_ALIGN_RIGHT_MID, 0, 0);
+    p->later = round_btn(p->root, 40, false, ICON_CLOSE, on_dismiss);
+    lv_obj_align(p->later, LV_ALIGN_RIGHT_MID, -48, 0);
 }
 
 // AI page: a panel over the 7-day history card. Everything is left-aligned: a
@@ -185,10 +186,10 @@ static void build_ai(lv_obj_t *host)
     lv_obj_set_height(p->detail, 20);
     lv_obj_align(p->detail, LV_ALIGN_TOP_LEFT, 0, 86);
 
-    lv_obj_t *show = pill(p->root, "Show on PC", true, on_focus);
-    lv_obj_align(show, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_t *later = pill(p->root, "Not now", false, on_dismiss);
-    lv_obj_align(later, LV_ALIGN_BOTTOM_RIGHT, -180, 0);
+    p->show = pill(p->root, "Show on PC", true, on_focus);
+    lv_obj_align(p->show, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    p->later = pill(p->root, "Not now", false, on_dismiss);
+    lv_obj_align(p->later, LV_ALIGN_BOTTOM_RIGHT, -180, 0);
 }
 
 // The Home strip has room for one short line: drop the leading "Claude " and
@@ -233,6 +234,11 @@ static void fill(panel_t *p, const hub_alert_t *a, bool compact)
         lv_obj_set_width(p->title, inner);
         lv_obj_set_width(p->detail, inner);
     }
+    // A server's session has no window on the PC: no Show, dismiss takes its place.
+    if (a->no_focus) lv_obj_add_flag(p->show, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(p->show, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(p->later, compact ? LV_ALIGN_RIGHT_MID : LV_ALIGN_BOTTOM_RIGHT,
+                 a->no_focus ? 0 : (compact ? -48 : -180), 0);
     lv_obj_set_style_text_color(p->kind, lv_color_hex(perm ? COL_WARN : COL_ACCENT), 0);
     lv_obj_set_style_border_color(p->root, lv_color_hex(perm ? COL_WARN : COL_ACCENT), 0);
     lv_obj_remove_flag(p->root, LV_OBJ_FLAG_HIDDEN);

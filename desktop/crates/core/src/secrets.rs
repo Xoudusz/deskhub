@@ -33,6 +33,8 @@ impl SecretStore for NoStore {
 pub const BOARD_TOKEN: &str = "board-token";
 /// The plex.tv account token from "Sign in with Plex".
 pub const PLEX_TOKEN: &str = "plex-token";
+/// The token of a deskhub-relay (Claude Code on a server, Settings > AI).
+pub const REMOTE_TOKEN: &str = "remote-claude-token";
 
 #[cfg(windows)]
 pub struct CredentialManager {

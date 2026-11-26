@@ -141,6 +141,7 @@ typedef struct {
     char title[64];
     char detail[128];
     char project[48];
+    bool no_focus;      // "focus": false - a server's session: no window to show on the PC
 } hub_alert_t;
 
 // Steam: the game being played and recently played games.

@@ -61,12 +61,18 @@ fn plex_headers(rb: reqwest::RequestBuilder, client_id: &str) -> reqwest::Reques
 
 /// Body of a successful reply, capped; errors carry the status but never the URL (it can
 /// hold a token).
-async fn read_ok(mut resp: reqwest::Response) -> Result<Vec<u8>> {
+async fn read_ok(resp: reqwest::Response) -> Result<Vec<u8>> {
+    read_limited(resp, MAX_BODY).await
+}
+
+/// A successful reply's body, at most `max` bytes (refused by Content-Length, else
+/// stopped while reading). Errors name the status, never the URL.
+pub(crate) async fn read_limited(mut resp: reqwest::Response, max: usize) -> Result<Vec<u8>> {
     let status = resp.status();
     if !status.is_success() {
         bail!("HTTP {}", status.as_u16());
     }
-    if resp.content_length().is_some_and(|n| n > MAX_BODY as u64) {
+    if resp.content_length().is_some_and(|n| n > max as u64) {
         bail!("reply too large");
     }
     // Read in chunks and stop at the cap (a missing or wrong length can't grow memory).
@@ -76,7 +82,7 @@ async fn read_ok(mut resp: reqwest::Response) -> Result<Vec<u8>> {
         .await
         .map_err(|e| anyhow!("reading the reply: {}", e.without_url()))?
     {
-        if body.len() + chunk.len() > MAX_BODY {
+        if body.len() + chunk.len() > max {
             bail!("reply too large");
         }
         body.extend_from_slice(&chunk);
@@ -89,7 +95,7 @@ async fn json_ok(resp: reqwest::Response) -> Result<Value> {
     serde_json::from_slice(&body).context("the reply isn't JSON")
 }
 
-fn send_err(e: reqwest::Error) -> anyhow::Error {
+pub(crate) fn send_err(e: reqwest::Error) -> anyhow::Error {
     if e.is_timeout() {
         anyhow!("no answer in time")
     } else if e.is_connect() {

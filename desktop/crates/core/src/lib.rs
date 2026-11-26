@@ -8,6 +8,7 @@ pub mod http;
 pub mod pages;
 pub mod plex;
 pub mod protocol;
+pub mod relay;
 pub mod secrets;
 pub mod session;
 pub mod settings;
