@@ -247,6 +247,14 @@ pub fn record(
         }
         // Finished its turn. The companion alerts once it has been idle a little while,
         // at once when the turn ends with a question (such as a plan to approve).
+        // Still running its own background jobs (a build, CI): not waiting for you yet.
+        "Stop" if data
+            .get("background_tasks")
+            .and_then(Value::as_array)
+            .is_some_and(|t| !t.is_empty()) =>
+        {
+            ("working", String::new())
+        }
         "Stop" => match asks_back(&text(data.get("last_assistant_message"))) {
             Some(m) => ("input", m.to_string()),
             None => ("idle", String::new()),
@@ -406,6 +414,11 @@ mod tests {
         assert_eq!(stop("Is it fixed? Yes, all green."), ("idle".into(), String::new()));
         let none = record("Stop", &json!({}), 1, Vec::new).unwrap();
         assert_eq!(none["state"], "idle");
+        // Waiting on its own background jobs: still working, even after a question.
+        let bg = json!({"last_assistant_message": "Merge it?", "background_tasks": [{"id": "b1"}]});
+        assert_eq!(record("Stop", &bg, 1, Vec::new).unwrap()["state"], "working");
+        let idle = json!({"last_assistant_message": "Done.", "background_tasks": []});
+        assert_eq!(record("Stop", &idle, 1, Vec::new).unwrap()["state"], "idle");
     }
 
     #[test]
