@@ -130,6 +130,13 @@ through `Ctx.remote`: `alerts` merges the sessions as `r-<id>` with `focus: fals
 board hides Show), `ai` adds the hours to the PC's usage. Commands: `remote_token_set(token)`,
 `remote_status()`.
 
+Allow / Deny: a server's permission request carries `request` (an id per request) and
+`detail` ("Bash: npm test"); its alert has `decide: true`. The board's `alert_action`
+`allow`/`deny` goes to `remote::decide` -> relay `POST /v1/decide?id=&request=&behavior=`
+(409 unless that request is pending) -> `~/.deskhub/claude_decisions/<id>.json` ->
+deskhub-cli's waiting PermissionRequest hook prints the decision (only with
+`~/.deskhub/board_decisions`, made by `deskhub-relay install-hooks`).
+
 ## deskhub-cli sidecar
 
 The installer ships `deskhub-cli.exe` next to the app (`bundle.externalBin`). Before

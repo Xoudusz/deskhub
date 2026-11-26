@@ -6,7 +6,8 @@
 //!       DESKHUB_RELAY_NAME   the server's name in alerts (default /etc/hostname)
 //!   deskhub-relay install-hooks [--cli /usr/local/bin/deskhub-cli]
 //!       adds deskhub-cli's hooks to Claude Code's settings.json, so sessions are written
-//!       to ~/.deskhub/claude_sessions for the relay to serve.
+//!       to ~/.deskhub/claude_sessions for the relay to serve, and turns on the board's
+//!       Allow / Deny for permission requests (~/.deskhub/board_decisions).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -52,7 +53,11 @@ fn install_hooks(args: &[String]) -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".claude"));
     let settings = claude_dir.join("settings.json");
-    install_in(&settings, &home.join(".deskhub"), &cli, What::Hooks)?;
+    let dir = home.join(".deskhub");
+    install_in(&settings, &dir, &cli, What::Hooks)?;
+    // Permission requests then wait for the board's Allow / Deny (deskhub-cli hook.rs).
+    std::fs::write(dir.join("board_decisions"), "deskhub-relay install-hooks\n")
+        .context("writing ~/.deskhub/board_decisions")?;
     println!("hooks installed in {}", settings.display());
     Ok(())
 }

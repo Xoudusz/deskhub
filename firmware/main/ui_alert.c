@@ -17,6 +17,7 @@
 typedef struct {
     lv_obj_t *root, *logo, *kind, *project, *title, *detail;
     lv_obj_t *show, *later;   // Show on PC (hidden for a server's session), dismiss
+    lv_obj_t *allow, *deny;   // a server's permission request ("decide")
 } panel_t;
 
 static panel_t s_home, s_ai;
@@ -52,6 +53,27 @@ static void on_dismiss(lv_event_t *e)
     (void)e;
     send_action("dismiss");
     hide();
+}
+
+static void on_allow(lv_event_t *e)
+{
+    (void)e;
+    send_action("allow");
+    hide();
+}
+
+static void on_deny(lv_event_t *e)
+{
+    (void)e;
+    send_action("deny");
+    hide();
+}
+
+// Tapping the Home strip (not its buttons) opens the AI page with the full alert.
+static void on_open_ai(lv_event_t *e)
+{
+    (void)e;
+    ui_show_page(PAGE_CLAUDE);
 }
 
 static lv_obj_t *round_btn(lv_obj_t *parent, int size, bool primary, const char *glyph, lv_event_cb_t cb)
@@ -151,6 +173,11 @@ static void build_home(lv_obj_t *host)
     lv_obj_align(p->show, LV_ALIGN_RIGHT_MID, 0, 0);
     p->later = round_btn(p->root, 40, false, ICON_CLOSE, on_dismiss);
     lv_obj_align(p->later, LV_ALIGN_RIGHT_MID, -48, 0);
+    p->allow = round_btn(p->root, 40, true, ICON_CHECK, on_allow);
+    lv_obj_align(p->allow, LV_ALIGN_RIGHT_MID, 0, 0);
+    p->deny = round_btn(p->root, 40, false, ICON_CLOSE, on_deny);
+    lv_obj_align(p->deny, LV_ALIGN_RIGHT_MID, -48, 0);
+    lv_obj_add_event_cb(p->root, on_open_ai, LV_EVENT_CLICKED, NULL);
 }
 
 // AI page: a panel over the 7-day history card. Everything is left-aligned: a
@@ -190,6 +217,10 @@ static void build_ai(lv_obj_t *host)
     lv_obj_align(p->show, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     p->later = pill(p->root, "Not now", false, on_dismiss);
     lv_obj_align(p->later, LV_ALIGN_BOTTOM_RIGHT, -180, 0);
+    p->allow = pill(p->root, "Allow", true, on_allow);
+    lv_obj_align(p->allow, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    p->deny = pill(p->root, "Deny", false, on_deny);
+    lv_obj_align(p->deny, LV_ALIGN_BOTTOM_RIGHT, -180, 0);
 }
 
 // The Home strip has room for one short line: drop the leading "Claude " and
@@ -203,6 +234,12 @@ static const char *short_detail(const hub_alert_t *a)
     strlcpy(buf, s, sizeof(buf));
     if (buf[0] >= 'a' && buf[0] <= 'z') buf[0] -= 'a' - 'A';
     return buf;
+}
+
+static void set_shown(lv_obj_t *o, bool shown)
+{
+    if (shown) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void fill(panel_t *p, const hub_alert_t *a, bool compact)
@@ -235,10 +272,15 @@ static void fill(panel_t *p, const hub_alert_t *a, bool compact)
         lv_obj_set_width(p->detail, inner);
     }
     // A server's session has no window on the PC: no Show, dismiss takes its place.
-    if (a->no_focus) lv_obj_add_flag(p->show, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_remove_flag(p->show, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_align(p->later, compact ? LV_ALIGN_RIGHT_MID : LV_ALIGN_BOTTOM_RIGHT,
-                 a->no_focus ? 0 : (compact ? -48 : -180), 0);
+    // A server's permission request gets Allow / Deny (Home: only those two; the AI
+    // page keeps Not now to the left of them).
+    set_shown(p->show, !a->no_focus && !a->decide);
+    set_shown(p->allow, a->decide);
+    set_shown(p->deny, a->decide);
+    set_shown(p->later, !(a->decide && compact));
+    int later_x = a->decide ? -360 : a->no_focus ? 0 : -180;
+    if (compact) later_x = a->no_focus ? 0 : -48;
+    lv_obj_align(p->later, compact ? LV_ALIGN_RIGHT_MID : LV_ALIGN_BOTTOM_RIGHT, later_x, 0);
     lv_obj_set_style_text_color(p->kind, lv_color_hex(perm ? COL_WARN : COL_ACCENT), 0);
     lv_obj_set_style_border_color(p->root, lv_color_hex(perm ? COL_WARN : COL_ACCENT), 0);
     lv_obj_remove_flag(p->root, LV_OBJ_FLAG_HIDDEN);

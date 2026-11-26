@@ -5,6 +5,9 @@
 //! GET /v1/sessions    -> {now, host, sessions: {id: {state, message, project, updated}}}
 //! GET /v1/usage?rev=N -> {rev, unchanged: true} when N is current, else
 //!                        {rev, hours: [[hour_s, model, total, output, n]], last_active}
+//! POST /v1/decide?id=&request=&behavior=allow|deny -> the board's answer to a pending
+//!                        permission request: written to ~/.deskhub/claude_decisions/<id>.json
+//!                        for the waiting deskhub-cli hook. 409 unless that request is pending.
 //!
 //! Plain HTTP for the LAN with a Bearer token (compared in constant time). Minimal
 //! HTTP/1.1: one GET per connection, headers capped at MAX_HEAD, IO_TIMEOUT per read and
@@ -23,7 +26,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 
 use crate::collectors::ai::{Claude, Usage};
-use crate::collectors::alerts::load_sessions;
+use crate::collectors::alerts::{load_sessions, parse_session, sanitize_id};
 
 const MAX_HEAD: usize = 8 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -142,6 +145,8 @@ fn sessions_body(shared: &Shared) -> Value {
                 "message": s.message,
                 "project": s.project,
                 "updated": s.updated,
+                "request": s.request,
+                "detail": s.detail,
             }),
         );
     }
@@ -165,6 +170,57 @@ fn usage_body(shared: &Shared, query: &str) -> Value {
     json!({"rev": st.rev, "hours": hours, "last_active": st.last_active})
 }
 
+fn param<'a>(query: &'a str, key: &str) -> &'a str {
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(key)?.strip_prefix('='))
+        .unwrap_or_default()
+}
+
+/// The board's Allow / Deny: written for the hook waiting on that permission request.
+fn decide(shared: &Shared, query: &str) -> (&'static str, Value) {
+    let (id, request, behavior) = (param(query, "id"), param(query, "request"), param(query, "behavior"));
+    let ok_id = |s: &str| !s.is_empty() && s.len() <= 64 && sanitize_id(s) == s;
+    if !ok_id(id) || !ok_id(request) || !matches!(behavior, "allow" | "deny") {
+        return ("400 Bad Request", json!({"error": "id, request and behavior=allow|deny"}));
+    }
+    let dir = shared.cfg.home.join(".deskhub");
+    let pending = std::fs::read_to_string(dir.join("claude_sessions").join(format!("{id}.json")))
+        .ok()
+        .and_then(|t| parse_session(&t))
+        .is_some_and(|s| s.state == "permission" && s.request == request);
+    if !pending {
+        return ("409 Conflict", json!({"error": "not waiting for this answer"}));
+    }
+    let body = json!({"request": request, "behavior": behavior}).to_string();
+    match write_private(&dir.join("claude_decisions"), &format!("{id}.json"), body.as_bytes()) {
+        Ok(()) => ("200 OK", json!({"ok": true})),
+        Err(e) => {
+            log::warn!("relay decide: {e}");
+            ("500 Internal Server Error", json!({"error": "could not save the answer"}))
+        }
+    }
+}
+
+/// Writes `name` in `dir` via a temp file and rename; owner-only on Unix.
+fn write_private(dir: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+    let result = opts.open(&tmp).and_then(|mut f| f.write_all(bytes));
+    match result.and_then(|()| std::fs::rename(&tmp, dir.join(name))) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 /// Status line and JSON body for a request head.
 async fn respond(head: &str, shared: &Arc<Shared>) -> (&'static str, Value) {
     let mut lines = head.split("\r\n");
@@ -179,11 +235,20 @@ async fn respond(head: &str, shared: &Arc<Shared>) -> (&'static str, Value) {
     if !same_token(token.as_bytes(), shared.cfg.token.as_bytes()) {
         return ("401 Unauthorized", json!({"error": "unauthorized"}));
     }
-    if method != "GET" {
-        return ("405 Method Not Allowed", json!({"error": "GET only"}));
-    }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let want = if path == "/v1/decide" { "POST" } else { "GET" };
+    if method != want {
+        return ("405 Method Not Allowed", json!({"error": format!("{want} only")}));
+    }
     match path {
+        "/v1/decide" => {
+            let s = shared.clone();
+            let query = query.to_string();
+            match tokio::task::spawn_blocking(move || decide(&s, &query)).await {
+                Ok(r) => r,
+                Err(_) => ("500 Internal Server Error", json!({"error": "decide"})),
+            }
+        }
         "/v1/sessions" => {
             let s = shared.clone();
             match tokio::task::spawn_blocking(move || sessions_body(&s)).await {
@@ -312,8 +377,12 @@ mod tests {
     }
 
     async fn get(addr: std::net::SocketAddr, path: &str, token: &str) -> (String, Value) {
+        call(addr, "GET", path, token).await
+    }
+
+    async fn call(addr: std::net::SocketAddr, method: &str, path: &str, token: &str) -> (String, Value) {
         let mut s = TcpStream::connect(addr).await.unwrap();
-        let req = format!("GET {path} HTTP/1.1\r\nHost: x\r\nauthorization: Bearer {token}\r\n\r\n");
+        let req = format!("{method} {path} HTTP/1.1\r\nHost: x\r\nauthorization: Bearer {token}\r\nContent-Length: 0\r\n\r\n");
         s.write_all(req.as_bytes()).await.unwrap();
         let mut out = String::new();
         s.read_to_string(&mut out).await.unwrap();
@@ -332,7 +401,7 @@ mod tests {
             dir.join("abc-1.json"),
             json!({"state": "permission", "message": "Claude needs your permission to use Bash",
                    "project": "deskhub", "cwd": "/root/secret", "updated": now - 5.0,
-                   "pids": [1, 2]})
+                   "pids": [1, 2], "request": "r1", "detail": "Bash: ls"})
             .to_string(),
         )
         .unwrap();
@@ -352,6 +421,30 @@ mod tests {
         let (host, sessions) = parse_sessions(&v, now).unwrap();
         assert_eq!(host, "vibecode");
         assert_eq!(sessions["abc-1"].project, "deskhub");
+        assert_eq!(sessions["abc-1"].detail, "Bash: ls");
+
+        // The board's answer: only for the pending request, POST only.
+        let decided = home.join(".deskhub/claude_decisions/abc-1.json");
+        let (status, _) = get(addr, "/v1/decide?id=abc-1&request=r1&behavior=allow", TOKEN).await;
+        assert!(status.contains("405"), "{status}");
+        let (status, _) = call(addr, "POST", "/v1/decide?id=abc-1&request=r1&behavior=allow", "wrong-token-wrong-token").await;
+        assert!(status.contains("401"), "{status}");
+        let (status, _) = call(addr, "POST", "/v1/decide?id=abc-1&request=old&behavior=allow", TOKEN).await;
+        assert!(status.contains("409"), "{status}");
+        let (status, _) = call(addr, "POST", "/v1/decide?id=abc-1&request=r1&behavior=always", TOKEN).await;
+        assert!(status.contains("400"), "{status}");
+        let (status, _) = call(addr, "POST", "/v1/decide?id=../x&request=r1&behavior=allow", TOKEN).await;
+        assert!(status.contains("400"), "{status}");
+        assert!(!decided.exists());
+        let (status, _) = call(addr, "POST", "/v1/decide?id=abc-1&request=r1&behavior=allow", TOKEN).await;
+        assert!(status.contains("200"), "{status}");
+        let d: Value = serde_json::from_str(&fs::read_to_string(&decided).unwrap()).unwrap();
+        assert_eq!(d, json!({"request": "r1", "behavior": "allow"}));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&decided).unwrap().permissions().mode() & 0o777, 0o600);
+        }
 
         let (_, v) = get(addr, "/v1/usage?rev=-1", TOKEN).await;
         let (rev, hours) = parse_usage(&v).unwrap();
