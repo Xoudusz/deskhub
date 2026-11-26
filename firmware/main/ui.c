@@ -86,7 +86,7 @@ void ui_theme_defaults(hub_theme_t *t)
 static int s_page = -1;
 
 // Default until the companion says otherwise: everything but the printer page.
-uint32_t g_pages_mask = ((1u << PAGE_COUNT) - 1) & ~(1u << PAGE_PRINTER) & ~(1u << PAGE_GITHUB);
+uint32_t g_pages_mask = ((1u << PAGE_COUNT) - 1) & ~(1u << PAGE_PRINTER) & ~(1u << PAGE_GITHUB) & ~(1u << PAGE_PLEX);
 hub_printer_t g_printers[HUB_MAX_PRINTERS];
 int g_printer_count;
 
@@ -671,7 +671,7 @@ void ui_set_printers(const hub_printer_t *p, int n)
 
 static const char *const s_glyphs[PAGE_COUNT] = {
     ICON_HOME, ICON_INSIGHTS, ICON_AUTO_AWESOME, ICON_EVENT, ICON_WB_SUNNY, ICON_MUSIC_NOTE,
-    ICON_VIEW_IN_AR, ICON_GRID_VIEW, ICON_TIMER, ICON_SPORTS_ESPORTS, ICON_PUBLIC, ICON_COMMIT,
+    ICON_VIEW_IN_AR, ICON_GRID_VIEW, ICON_TIMER, ICON_SPORTS_ESPORTS, ICON_PUBLIC, ICON_COMMIT, ICON_MOVIE,
 };
 
 void ui_rail_set_text(int page, const char *text)
@@ -907,7 +907,7 @@ void ui_init(void)
     void (*creators[PAGE_COUNT])(lv_obj_t *) = {
         home_create, stats_create, claude_create, calendar_create, weather_page_create, media_create,
         printer_create, shortcuts_create, timer_page_create, games_page_create, page_none,
-        github_page_create,
+        github_page_create, plex_page_create,
     };
     for (int i = 0; i < PAGE_COUNT; i++) {
         lv_obj_t *p = lv_obj_create(scr);

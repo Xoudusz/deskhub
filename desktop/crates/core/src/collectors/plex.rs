@@ -92,6 +92,8 @@ pub struct Poller {
     art_key: Option<String>,
     art_failed: Option<(String, Instant)>,
     pub art_id: u32,
+    /// Why the server can't be reached ("" = it can).
+    pub error: String,
 }
 
 impl Poller {
@@ -102,6 +104,7 @@ impl Poller {
         self.sessions = sessions;
         self.seen = now_unix;
         self.online = true;
+        self.error.clear();
     }
 
     /// The server didn't answer: nothing shown until it does.
@@ -187,6 +190,10 @@ impl Poller {
             "transcoding": self.sessions.iter().filter(|s| s.transcoding).count(),
             "active": false,
         });
+        if !self.online && !self.error.is_empty() {
+            // For the app's Media settings (the board ignores it).
+            msg["error"] = json!(self.error);
+        }
         let Some(s) = self.shown() else {
             return msg;
         };
@@ -260,14 +267,29 @@ fn now_unix() -> f64 {
         .unwrap_or(0.0)
 }
 
-/// How to reach the chosen server, through plex.tv.
+/// How to reach the chosen server, through plex.tv: the first listed address that
+/// answers as that server.
 async fn connect(cfg: &MediaServer, token: &str) -> anyhow::Result<Conn> {
     let all = plex::resources(plex::TV, &cfg.client_id, token).await?;
     let res = all
         .iter()
         .find(|r| r.id == cfg.server_id)
         .ok_or_else(|| anyhow::anyhow!("the server is no longer on this Plex account"))?;
-    plex::pick_connection(res, &cfg.client_id, cfg!(windows))
+    first_answering(plex::candidates(res, &cfg.client_id, cfg!(windows))?, &cfg.server_id).await
+}
+
+/// The first candidate whose /identity is `server_id`; else an error naming every
+/// address tried and why it failed.
+pub async fn first_answering(cands: Vec<Conn>, server_id: &str) -> anyhow::Result<Conn> {
+    let mut tried = Vec::new();
+    for c in cands {
+        match c.identity().await {
+            Ok(id) if id == server_id => return Ok(c),
+            Ok(_) => tried.push(format!("{}: another server", c.target())),
+            Err(e) => tried.push(format!("{}: {e:#}", c.target())),
+        }
+    }
+    anyhow::bail!("can't reach the server ({})", tried.join("; "))
 }
 
 pub async fn run(mut ctx: Ctx) {
@@ -310,6 +332,7 @@ pub async fn run(mut ctx: Ctx) {
                 }
                 Err(e) => {
                     log::info!("plex {}: {e:#}", cfg.server_name);
+                    poller.error = format!("{e:#}");
                     // The address may have changed: ask plex.tv again next time.
                     conn = None;
                     BACKOFF
@@ -323,6 +346,7 @@ pub async fn run(mut ctx: Ctx) {
                 Err(e) => {
                     log::info!("plex {}: {e:#}", cfg.server_name);
                     poller.failed();
+                    poller.error = format!("{e:#}");
                     BACKOFF
                 }
             },
@@ -461,5 +485,18 @@ mod tests {
         let mut down = Poller::default();
         assert!(down.round(&conn(1), t0).await.is_err());
         assert!(!down.online);
+        down.error = "can't connect".into();
+        assert_eq!(down.message("Home", 0.0)["error"], "can't connect");
+    }
+
+    #[tokio::test]
+    async fn the_first_address_answering_as_the_server_wins() {
+        let other = fake(vec![("/identity", 200, br#"{"MediaContainer": {"machineIdentifier": "x"}}"#.to_vec())]).await;
+        let right = fake(vec![("/identity", 200, br#"{"MediaContainer": {"machineIdentifier": "srv1"}}"#.to_vec())]).await;
+        let c = first_answering(vec![conn(1), conn(other.port), conn(right.port)], "srv1").await.unwrap();
+        assert_eq!(c.base, format!("http://127.0.0.1:{}", right.port));
+        let e = first_answering(vec![conn(1), conn(other.port)], "srv1").await.unwrap_err().to_string();
+        assert!(e.contains("127.0.0.1:1:") && e.contains("another server"), "{e}");
+        assert!(!e.contains("server-token"), "{e}");
     }
 }

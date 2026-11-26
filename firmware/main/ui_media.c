@@ -1,7 +1,7 @@
 // Media: whatever Windows reports as the current media session
 // (Spotify, YouTube in a browser, etc.), with cover art and controls.
-// With a Plex or Jellyfin server set up, the page splits: this PC on the left,
-// the server on the right (its session, or the server and its library while nothing plays).
+// The Plex page (plex_page_create) shows the media server the same way, on its own:
+// its session, or the server and its library while nothing plays.
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,13 +40,11 @@ static void seek_cb(lv_event_t *e)
     }
 }
 
-// ---- split view: this PC on the left, the media server on the right --------
-// Shown once the companion says a Plex or Jellyfin server is set up. Each card:
-// the cover with the text beside it, the progress bar under, then the buttons.
+// ---- media server card (the Plex page) ----------------------------------------
+// The cover with the text beside it, the progress bar under, then the buttons.
 // The block is centred in the card's height, so a card without buttons (Plex)
 // or with nothing playing doesn't leave an empty band at the bottom.
 
-#define CARD_GAP 12
 #define TRACK_COL 0x3a3f49   // progress track: visible on a card
 
 typedef struct {
@@ -59,8 +57,8 @@ typedef struct {
     int layout;   // -1 none yet, else bit 0 progress, bit 1 buttons, bit 2 idle
 } media_row_t;
 
-static lv_obj_t *s_split;
-static media_row_t s_rows[2];   // 0 = this PC, 1 = the server
+static lv_obj_t *s_split;      // the Plex page's content
+static media_row_t s_rows[2];   // 1 = the server (0 unused)
 
 static void row_cmd_cb(lv_event_t *e)
 {
@@ -107,7 +105,8 @@ static void row_create(media_row_t *r, bool server, int x, int w, int h)
 {
     int inner_w = w - 34, inner_h = h - 34;
     int art_h = inner_w * 45 / 100;
-    if (art_h > 150) art_h = 150;
+    if (art_h > 280) art_h = 280;
+    if (art_h > inner_h - 140) art_h = inner_h - 140;   // room for the lines and the progress bar
     int art_w = server ? art_h * 2 / 3 : art_h;
     int tx = art_w + 14, tw = inner_w - tx;
     r->server = server;
@@ -299,30 +298,24 @@ static void row_art(media_row_t *r, bool has, const lv_image_dsc_t *img)
     show(r->art_ph, !has);
 }
 
-static void split_create(lv_obj_t *page)
+void plex_page_create(lv_obj_t *page)
 {
     s_split = lv_obj_create(page);
     lv_obj_remove_style_all(s_split);
     lv_obj_set_size(s_split, LV_PCT(100), LV_PCT(100));
     lv_obj_remove_flag(s_split, LV_OBJ_FLAG_SCROLLABLE);
-    int w = (CONTENT_W - CARD_GAP) / 2;
-    row_create(&s_rows[0], false, 0, w, CONTENT_H);
-    row_create(&s_rows[1], true, w + CARD_GAP, CONTENT_W - w - CARD_GAP, CONTENT_H);
-    lv_obj_add_flag(s_split, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void split_refresh_pc(void)
-{
-    row_fill(&s_rows[0], &g_media, g_media.active ? g_media.source : "This PC",
-             g_pc_online ? "Nothing playing on this PC" : "PC offline",
-             g_pc_online ? "" : "Start the companion app on your PC", "");
+    row_create(&s_rows[1], true, 0, CONTENT_W, CONTENT_H);
+    media_refresh_server();
+    row_art(&s_rows[1], ui_server_has_art(), &g_srv_art);
 }
 
 void media_refresh_server(void)
 {
     if (!s_split) return;
     if (!g_server.configured) {
-        media_refresh();   // back to the PC-only page
+        static const hub_media_t none;
+        row_fill(&s_rows[1], &none, "Plex", "Plex isn't set up",
+                 "Sign in with Plex in the Desk Hub app's Media settings", "");
         return;
     }
     const hub_server_t *s = &g_server;
@@ -336,7 +329,6 @@ void media_refresh_server(void)
     if (s->online) strlcpy(idle, "Nothing playing right now", sizeof(idle));
     else snprintf(idle, sizeof(idle), "Can't reach %.31s", s->name[0] ? s->name : "the server");
     row_fill(&s_rows[1], &s->now, src, idle, s->online ? s->library : "", s->version);
-    if (lv_obj_has_flag(s_split, LV_OBJ_FLAG_HIDDEN)) media_refresh();
 }
 
 void media_refresh_server_art(void)
@@ -429,7 +421,6 @@ void media_create(lv_obj_t *page)
     s_empty_sub = ui_label(s_empty, g_font_16, COL_DIM, "");
     lv_obj_align(s_empty_sub, LV_ALIGN_CENTER, 0, 56);
 
-    split_create(page);
     media_refresh();
 }
 
@@ -445,19 +436,6 @@ static void show_pos(void)
 void media_refresh(void)
 {
     const hub_media_t *m = &g_media;
-    if (g_server.configured) {
-        lv_obj_add_flag(s_body, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_empty, LV_OBJ_FLAG_HIDDEN);
-        if (lv_obj_has_flag(s_split, LV_OBJ_FLAG_HIDDEN)) {
-            lv_obj_remove_flag(s_split, LV_OBJ_FLAG_HIDDEN);
-            media_refresh_server();
-            row_art(&s_rows[0], ui_media_has_art(), &g_art);
-            row_art(&s_rows[1], ui_server_has_art(), &g_srv_art);
-        }
-        split_refresh_pc();
-        return;
-    }
-    lv_obj_add_flag(s_split, LV_OBJ_FLAG_HIDDEN);
     if (!m->active) {
         lv_obj_add_flag(s_body, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_empty, LV_OBJ_FLAG_HIDDEN);
@@ -492,7 +470,6 @@ void media_refresh(void)
 
 void media_refresh_art(void)
 {
-    row_art(&s_rows[0], ui_media_has_art(), &g_art);
     if (ui_media_has_art()) {
         lv_image_set_src(s_art, &g_art);
         lv_obj_invalidate(s_art);
@@ -512,12 +489,10 @@ void media_tick(void)
         s_pos_s++;
         show_pos();
     }
-    const hub_media_t *ms[2] = {&g_media, &g_server.now};
-    for (int i = 0; i < 2 && s_split; i++) {
-        media_row_t *r = &s_rows[i];
-        if (ms[i]->active && ms[i]->playing && ms[i]->dur > 0 && r->pos_s < ms[i]->dur) {
-            r->pos_s++;
-            row_show_pos(r);
-        }
+    const hub_media_t *sm = &g_server.now;
+    media_row_t *r = &s_rows[1];
+    if (s_split && sm->active && sm->playing && sm->dur > 0 && r->pos_s < sm->dur) {
+        r->pos_s++;
+        row_show_pos(r);
     }
 }

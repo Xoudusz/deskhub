@@ -89,7 +89,8 @@ void ui_send_server(const char *cmd, int value);
 void ui_show_page(int page);
 
 enum { PAGE_HOME, PAGE_STATS, PAGE_CLAUDE, PAGE_CALENDAR, PAGE_WEATHER, PAGE_MEDIA, PAGE_PRINTER, PAGE_SHORTCUTS, PAGE_TIMER, PAGE_GAMES, PAGE_NETWORK,
-       PAGE_GITHUB, PAGE_COUNT };
+       PAGE_GITHUB, PAGE_PLEX, PAGE_COUNT };   // new pages go last: NVS masks and orders keep their bits
+void plex_page_create(lv_obj_t *page);
 
 // Pages shown in the rail (bit per PAGE_*). Home is always on.
 extern uint32_t g_pages_mask;

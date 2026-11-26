@@ -8,7 +8,7 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, onPlex, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type PlexServer, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 import { mountSim, onSimState, simState } from "./sim";
@@ -645,6 +645,40 @@ let plexUrl = "";
 let plexNote = "";
 let plexServers: PlexServer[] | null = null;
 let plexLoading = false;
+/** The last "media_server" message the app sent the board: is the server reachable? */
+type ServerState = { configured: boolean; online?: boolean; version?: string; library?: string; streams?: number; error?: string };
+let plexState: ServerState | null = null;
+
+function serverState(f: SimFrame): ServerState | null {
+  if (!("json" in f)) return null;
+  const j = f.json as { type?: string };
+  return j && j.type === "media_server" ? (j as ServerState) : null;
+}
+
+/** Keeps plexState current; redraws the Media section when what it shows changes. */
+function watchServer() {
+  const key = (x: ServerState | null) => JSON.stringify(x && [x.configured, x.online, x.version, x.library, x.streams, x.error]);
+  const take = (f: SimFrame) => {
+    const next = serverState(f);
+    if (!next) return;
+    const changed = key(next) !== key(plexState);
+    plexState = next;
+    if (changed && section === "media") render();
+  };
+  api.simState().then(fs => fs.forEach(take)).catch(() => undefined);
+  void api.onSimFrame(take);
+}
+
+function plexStatusRow(): string {
+  const p = plexState;
+  if (!S.media_server.server_id) return "";
+  if (!p || !p.configured) return row("Status", "", "Checking the server");
+  if (p.online) {
+    const playing = p.streams ? `${p.streams} playing` : "Nothing playing";
+    return row(`${icon("check", 14)}Connected`, "", esc([p.version, p.library, playing].filter(Boolean).join(" - ")));
+  }
+  return row(`${icon("x", 14)}Can't reach the server`, "", esc(p.error || "No answer yet; the app tries again every minute"));
+}
 
 function loadPlexServers() {
   if (plexLoading) return;
@@ -665,7 +699,7 @@ function mediaHtml(): string {
           `<div class="swr"><input class="txt" readonly value="${esc(plexUrl)}" spellcheck="false" style="width:100%"></div>`,
         ]
       : [row("Plex", `<button type="button" data-act="plex-sign-in">${icon("zap", 13)}Sign in with Plex</button>`,
-          "Shows what plays on your Plex server on the board's media page, next to the PC's media")];
+          "Shows what plays on your Plex server on the board's Plex page")];
     return card("Media server", "Plex now playing on the board", [...rows, ...(plexNote ? [text(plexNote)] : [])].join(""));
   }
   if (!plexServers) loadPlexServers();
@@ -683,6 +717,7 @@ function mediaHtml(): string {
   return card("Media server", "Plex now playing on the board", [
     row("Signed in to Plex", `<button type="button" data-act="plex-sign-out">${icon("x", 13)}Sign out</button>`),
     server,
+    plexStatusRow(),
     ...(plexNote ? [text(plexNote)] : []),
   ].join(""));
 }
@@ -1270,6 +1305,7 @@ async function boot() {
     setDot();
     if (section === "status") render(true);
   });
+  watchServer();
   await onPlex(o => {
     plexUrl = "";
     plexNote = o.state === "done" ? "" : o.message;

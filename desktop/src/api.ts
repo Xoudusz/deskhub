@@ -6,7 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-export type Page = "home" | "stats" | "ai" | "calendar" | "weather" | "media" | "printer" | "shortcuts" | "timer" | "games" | "network" | "github";
+export type Page = "home" | "stats" | "ai" | "calendar" | "weather" | "media" | "plex" | "printer" | "shortcuts" | "timer" | "games" | "network" | "github";
 export type Widget = "clock" | "claude" | "events" | "weather" | "media" | "stats" | "printer" | "game" | "net" | "github";
 
 /** Claude Code wiring: status line and hooks point at deskhub-cli; cli = the helper exists. */
@@ -63,9 +63,9 @@ export type UsbJoined = { ip: string; host: string };
 
 export type SettingsPatch = { [K in keyof Settings]?: Partial<Settings[K]> };
 
-export const ALL_PAGES: Page[] = ["home", "stats", "ai", "calendar", "weather", "media", "printer", "shortcuts", "timer", "games", "network", "github"];
+export const ALL_PAGES: Page[] = ["home", "stats", "ai", "calendar", "weather", "media", "plex", "printer", "shortcuts", "timer", "games", "network", "github"];
 export const PAGE_LABELS: Record<Page, string> = {
-  home: "Home", stats: "PC stats", ai: "AI agent usage", calendar: "Calendar", weather: "Weather", media: "Now playing",
+  home: "Home", stats: "PC stats", ai: "AI agent usage", calendar: "Calendar", weather: "Weather", media: "Now playing", plex: "Plex",
   printer: "3D printer", shortcuts: "Shortcuts", timer: "Timer", games: "Games", network: "Internet", github: "GitHub",
 };
 
@@ -223,7 +223,7 @@ function mockHomeFrame(): SimFrame {
 /** Browser mock: a plausible board state for the simulator. */
 function mockSimFrames(): SimFrame[] {
   return [
-    { json: { type: "layout", pages: ["home", "stats", "ai", "weather", "media", "shortcuts", "timer"], ordered: true, nav: "bottom", seconds: mock.display.clock_seconds } },
+    { json: { type: "layout", pages: ["home", "stats", "ai", "weather", "media", "plex", "shortcuts", "timer"], ordered: true, nav: "bottom", seconds: mock.display.clock_seconds } },
     mockHomeFrame(),
     { json: { type: "stats", cpu: 14, cpu_temp: 52, gpu: 31, gpu_temp: 48, ram_used: 11.2, ram_total: 32, vram_used: 3.1, vram_total: 16, net_down: 120000, net_up: 9000, disk: 61, cpu_name: "Ryzen 7 7800X3D", gpu_name: "Radeon RX 7900 XT" } },
     { json: { type: "media", active: true, playing: true, title: "Midnight City", artist: "M83", album: "Hurry Up, We're Dreaming", source: "Spotify", pos: 95, dur: 243, can_seek: true, art_id: 0 } },
