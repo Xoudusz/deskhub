@@ -19,14 +19,14 @@ colors:
   text: "#f3f4f6"             # COL_TEXT
   text-muted: "#9aa0aa"       # COL_MUTED
   text-dim: "#6b717c"         # COL_DIM (icons/placeholders only, not body text)
-  success: "#3dd68c"          # COL_GOOD
-  warning: "#f3c14b"          # COL_WARN (yellow, apart from the amber accent)
-  error: "#ff6b6b"            # COL_BAD
+  success: "#5fbf8a"          # COL_GOOD
+  warning: "#d9b45a"          # COL_WARN (yellow, apart from the amber accent)
+  error: "#e07a72"            # COL_BAD
   data:
-    series-1: "#6cb4ff"       # COL_ACCENT2 (CPU, upload, rain)
-    series-2: "#5ed3c6"       # COL_CYAN (GPU, download)
-    series-3: "#b49cff"       # COL_DATA3
-    series-4: "#f79ad3"       # COL_DATA4
+    series-1: "#7aa7d6"       # COL_ACCENT2 (CPU, upload, rain)
+    series-2: "#6fb8ad"       # COL_CYAN (GPU, download)
+    series-3: "#a598d4"       # COL_DATA3
+    series-4: "#d39bbd"       # COL_DATA4
   brand:
     claude: "#d97757"       # COL_BRAND_CLAUDE
     codex: "#10a37f"        # COL_BRAND_CODEX
@@ -162,7 +162,8 @@ Two targets share one language:
 
 ## Colors
 
-One accent (`primary`) marks the current item and the single primary action. Status colours
+Calm by default: data, status and weather colours are softened (lower saturation, still
+distinguishable and >= 4.5:1 on `surface`). One accent (`primary`) marks the current item and the single primary action. Status colours
 (`success`, `warning`, `error`) appear only for state. `data.*` colours are for charts and gauges in
 this fixed order. Everything else is neutral greys on `background`.
 
@@ -191,14 +192,18 @@ app-shared:
   fg: "#e3e9f5"
   muted: "#8a97b0"
   dim: "#b4bfd4"
-  good: "#3dd68c"
-  bad: "#ff6b6b"
-  warn: "#f3c14b"
+  good: "#5fbf8a"
+  bad: "#e07a72"
+  warn: "#d9b45a"
 ```
 
 App themes (`[data-theme]`). The board gets bg=bg, rail=panel2, card=panel, card_hi=panel3,
 border=line, pressed=line2, text=#e3e9f5, muted=#8a97b0, accent=accent; dim, on_accent and
 accent_pressed are computed in `theme.rs`.
+
+**Slate** and **Sage** are the calm themes: low-contrast surfaces, their own `--muted`, a soft
+mid-light accent with dark text on it (`--on-accent: var(--panel)`, `Palette.on_accent` in
+`theme.rs`; white on these accents would be ~2:1).
 
 ```yaml
 themes:
@@ -208,6 +213,8 @@ themes:
   midnight: { accent: "#7b8cff", accent2: "#a5b4ff", bg: "#05060a", bg2: "#080a10", panel: "#0d0f18", panel2: "#0a0c13", panel3: "#141829", line: "#1d2030", line2: "#2c3150" }
   teal:     { accent: "#1fb5a8", accent2: "#5fe0d0", bg: "#081517", bg2: "#0b1a1c", panel: "#0f2224", panel2: "#0c1c1e", panel3: "#143032", line: "#1d3a3c", line2: "#2a5457" }
   rose:     { accent: "#e0569b", accent2: "#ff9cc8", bg: "#16080f", bg2: "#1b0b13", panel: "#241019", panel2: "#1d0d15", panel3: "#301624", line: "#4a2236", line2: "#66304b" }
+  slate:    { accent: "#8fb0d6", accent2: "#b5cbe6", bg: "#0f1115", bg2: "#111419", panel: "#181c22", panel2: "#12151a", panel3: "#232831", line: "#222731", line2: "#2b313c", muted: "#97a0ad" }
+  sage:     { accent: "#9cc2a5", accent2: "#c2dcc8", bg: "#101211", bg2: "#121513", panel: "#191d1b", panel2: "#131614", panel3: "#242a27", line: "#232926", line2: "#2d3430", muted: "#9aa59f" }
 ```
 
 Other palettes, each defined once in code (games: `ui_games.c name_color`, weather: `weather_data.c`):
@@ -217,13 +224,13 @@ games-initials: ["#2f5d8a", "#2e7d6b", "#6b4e9b", "#9a4a5a", "#8a6a2f", "#4a6b2f
 tile-presets: ["#b4413c", "#3a4256", "#2f6f5e", "#2b2f3a", "#8a6d1f", "#5b3fa0"]   # api.ts TILE_COLORS; --tile-default = #2b2f3a
 feed-default: "#7c9cff"                                                      # api.ts FEED_COLOR
 weather-icons:                      # weather_data.c, by weather code
-  clear-day: "#fbbf5a"
-  clear-night: "#c08cff"            # also thunderstorm
-  partly-day: "#fcd38d"
-  partly-night: "#a9b4ff"
-  cloud-fog: "#aeb7e0"
-  snow: "#e6f0ff"
-  rain: "#67e8f9"
+  clear-day: "#e3b866"
+  clear-night: "#b39ad9"            # also thunderstorm
+  partly-day: "#e0c690"
+  partly-night: "#a3abd9"
+  cloud-fog: "#a9b0c8"
+  snow: "#dfe6f2"
+  rain: "#7cc3d1"
 fixed:
   white: "#ffffff"                  # COL_WHITE / --white: games initials text, app slider thumb, --on-accent
   black: "#000000"                  # COL_BLACK / --black: screensaver, playtime badge (70 %), app board preview

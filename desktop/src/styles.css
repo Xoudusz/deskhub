@@ -4,8 +4,8 @@
   --bg: #0a101c; --bg2: #0d1524; --panel: #121b2e; --panel2: #0f1727; --panel3: #16223a;
   --line: #22304d; --line2: #2f4370; --fg: #e3e9f5; --muted: #8a97b0; --dim: #b4bfd4;
   --accent: #3b8eea; --accent2: #5cc6f0; --acc-rgb: 59,142,234; --accent-bg: rgba(var(--acc-rgb),.12); --card-rgb: 10,16,28;
-  --good: #3dd68c; --bad: #ff6b6b; --warn: #f3c14b;
-  --good-bg: rgba(61,214,140,.12); --bad-bg: rgba(255,107,107,.12); --mute-bg: rgba(138,151,176,.12); --warn-bg: rgba(243,193,75,.12);
+  --good: #5fbf8a; --bad: #e07a72; --warn: #d9b45a;
+  --good-bg: rgba(95,191,138,.12); --bad-bg: rgba(224,122,114,.12); --mute-bg: rgba(138,151,176,.12); --warn-bg: rgba(217,180,90,.12);
   --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
   --on-accent: #fff;
   --white: #fff; --black: #000; --tile-default: #2b2f3a; /* DESIGN.md fixed.*, tile-presets */
@@ -76,4 +76,13 @@ html[data-theme="teal"] {
 html[data-theme="rose"] {
   --accent: #e0569b; --accent2: #ff9cc8; --acc-rgb: 224,86,155; --card-rgb: 26,10,18;
   --line: #4a2236; --line2: #66304b; --panel: #241019; --panel2: #1d0d15; --panel3: #301624; --bg: #16080f; --bg2: #1b0b13;
+}
+/* Calm themes (DESIGN.md): low-contrast surfaces, soft accent, dark text on the accent */
+html[data-theme="slate"] {
+  --accent: #8fb0d6; --accent2: #b5cbe6; --acc-rgb: 143,176,214; --card-rgb: 15,17,21; --muted: #97a0ad; --on-accent: var(--panel);
+  --line: #222731; --line2: #2b313c; --panel: #181c22; --panel2: #12151a; --panel3: #232831; --bg: #0f1115; --bg2: #111419;
+}
+html[data-theme="sage"] {
+  --accent: #9cc2a5; --accent2: #c2dcc8; --acc-rgb: 156,194,165; --card-rgb: 16,18,17; --muted: #9aa59f; --on-accent: var(--panel);
+  --line: #232926; --line2: #2d3430; --panel: #191d1b; --panel2: #131614; --panel3: #242a27; --bg: #101211; --bg2: #121513;
 }

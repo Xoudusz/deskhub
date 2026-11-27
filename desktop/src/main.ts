@@ -32,7 +32,7 @@ const SECTIONS: [SectionId, string, string][] = [
   ["about", "info", "About"],
 ];
 const THEMES: [string, string][] = [
-  ["midnight", "Midnight (default)"], ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["teal", "Teal"], ["rose", "Rose"],
+  ["midnight", "Midnight (default)"], ["purple", "Purple"], ["blue", "Blue"], ["graphite", "Graphite"], ["teal", "Teal"], ["rose", "Rose"], ["slate", "Slate (calm)"], ["sage", "Sage (calm)"],
 ];
 const BOARD_THEMES: [string, string][] = [
   ["same", "Same as app"], ["classic", "Classic amber"], ...THEMES.map(([k, v]): [string, string] => [k, v.replace(" (default)", "")]),

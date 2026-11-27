@@ -26,13 +26,13 @@
 #define COL_ACCENT   (g_theme.accent)   // actions, the current item, highlights
 #define COL_ON_ACCENT (g_theme.on_accent)  // text and icons on the accent
 #define COL_ACCENT_PRESSED (g_theme.accent_pressed)
-#define COL_ACCENT2  0x6cb4ff   // blue: the first data series
-#define COL_CYAN     0x5ed3c6   // teal: the second data series
-#define COL_DATA3    0xb49cff   // lilac: the third data series
-#define COL_DATA4    0xf79ad3   // pink: the fourth data series (VRAM gauge)
-#define COL_GOOD     0x3dd68c
-#define COL_WARN     0xf3c14b   // yellow, apart from the amber accent
-#define COL_BAD      0xff6b6b
+#define COL_ACCENT2  0x7aa7d6   // blue: the first data series
+#define COL_CYAN     0x6fb8ad   // teal: the second data series
+#define COL_DATA3    0xa598d4   // lilac: the third data series
+#define COL_DATA4    0xd39bbd   // pink: the fourth data series (VRAM gauge)
+#define COL_GOOD     0x5fbf8a
+#define COL_WARN     0xd9b45a   // yellow, apart from the amber accent
+#define COL_BAD      0xe07a72
 #define COL_TRACK    0x3a3f49   // media progress track: visible on a card
 #define COL_WHITE    0xffffff   // text on user/game colours
 #define COL_BLACK    0x000000   // screensaver, dark badge behind game art

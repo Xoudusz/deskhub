@@ -501,6 +501,8 @@ pub enum BoardTheme {
     Midnight,
     Teal,
     Rose,
+    Slate,
+    Sage,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -604,6 +606,10 @@ pub enum Theme {
     Midnight,
     Teal,
     Rose,
+    /// Calm: blue-grey with a soft blue accent.
+    Slate,
+    /// Calm: green-grey with a sage accent.
+    Sage,
 }
 
 impl Settings {

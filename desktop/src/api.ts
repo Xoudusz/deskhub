@@ -30,7 +30,7 @@ export type Settings = {
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
   location: Location;
-  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
+  appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" | "slate" | "sage"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" | "slate" | "sage" };
   ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number; remote_url: string };
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
