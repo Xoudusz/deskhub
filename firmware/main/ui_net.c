@@ -230,7 +230,7 @@ void net_refresh(void)
     lv_chart_set_range(s_chart, LV_CHART_AXIS_PRIMARY_Y, 0, peak);
     // The app's saved history (hist_label set) or an older app's last 2 minutes.
     char cap[48];
-    snprintf(cap, sizeof(cap), "LATENCY, %s", n->hist_label[0] ? n->hist_label : "LAST 2 MINUTES");
+    snprintf(cap, sizeof(cap), "LATENCY, %.23s", n->hist_label[0] ? n->hist_label : "LAST 2 MINUTES");
     lv_label_set_text(s_chart_cap, cap);
     int points = n->hist_count > 0 ? n->hist_count : HUB_NET_HIST;
     if ((int)lv_chart_get_point_count(s_chart) != points) lv_chart_set_point_count(s_chart, points);

@@ -235,7 +235,7 @@ void stats_refresh(void)
     lv_label_set_text(s_net, buf);
     snprintf(buf, sizeof(buf), "Disk %d%% used", (int)s->disk);
     lv_label_set_text(s_disk, buf);
-    snprintf(buf, sizeof(buf), "%s%s%s", s->cpu_name, s->gpu_name[0] ? "  /  " : "", s->gpu_name);
+    snprintf(buf, sizeof(buf), "%.47s%s%.47s", s->cpu_name, s->gpu_name[0] ? "  /  " : "", s->gpu_name);
     lv_label_set_text(s_names, buf);
 
     if (s->hist_count > 0) {
