@@ -10,6 +10,7 @@ use crate::session::{Publisher, ServiceHandle};
 use crate::settings::Settings;
 
 pub mod ai;
+pub mod alert_log;
 pub mod alerts;
 pub mod calendar;
 pub mod github;

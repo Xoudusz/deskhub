@@ -79,6 +79,7 @@ pub fn parse_sessions(v: &Value, local_now: f64) -> Result<(String, HashMap<Stri
                 host: host.clone(),
                 request: sanitize_id(s["request"].as_str().unwrap_or_default()),
                 detail: ascii_fold(s["detail"].as_str().unwrap_or_default(), 120),
+                cause: ascii_fold(s["cause"].as_str().unwrap_or_default(), 60),
             },
         );
     }

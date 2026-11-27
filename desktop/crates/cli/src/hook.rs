@@ -2,7 +2,8 @@
 //! working or waiting for you, in ~/.deskhub/claude_sessions/<session_id>.json.
 //! Stored: state, folder name, notification text and, for a permission request, a short
 //! summary of what it asks for (the Bash command, file path or URL, 120 characters).
-//! Prompts and Claude's replies are never stored.
+//! Also `cause`: the hook event that wrote the record ("Stop", "Notification: idle_prompt",
+//! "PermissionRequest: Bash"), for the app's alert log. Prompts and Claude's replies are never stored.
 //!
 //! Board decisions (a server running deskhub-relay, marker file ~/.deskhub/board_decisions):
 //! a permission request then also waits for ~/.deskhub/claude_decisions/<session_id>.json
@@ -232,15 +233,19 @@ pub fn record(
 ) -> Option<Value> {
     let mut extra = None;
     let mut bg = false;
+    // What caused this record, for the alert log: the event and its kind or tool.
+    let mut cause = event.to_string();
     let (state, message): (&str, String) = match event {
         "Notification" => {
             let kind = text(data.get("notification_type"));
             let state = WAITING.iter().find(|(k, _)| *k == kind)?.1;
+            cause = format!("Notification: {kind}");
             (state, collapse(&text(data.get("message"))))
         }
         "PermissionRequest" => {
             // A permission dialog is showing (terminal and desktop app alike).
             let tool = text(data.get("tool_name"));
+            cause = format!("PermissionRequest: {tool}");
             let message = if tool.is_empty() {
                 String::new()
             } else {
@@ -252,6 +257,7 @@ pub fn record(
         "PreToolUse" => {
             let tool = text(data.get("tool_name"));
             let message = ASKS.iter().find(|(t, _)| *t == tool)?.1;
+            cause = format!("PreToolUse: {tool}");
             ("input", message.to_string())
         }
         // Finished its turn. The companion alerts once it has been idle a little while,
@@ -263,13 +269,21 @@ pub fn record(
             .is_some_and(|t| !t.is_empty()) =>
         {
             bg = true;
+            cause = "Stop (background jobs)".into();
             ("working", String::new())
         }
         "Stop" => match asks_back(&text(data.get("last_assistant_message"))) {
-            Some(m) => ("input", m.to_string()),
+            Some(m) => {
+                cause = "Stop (asks back)".into();
+                ("input", m.to_string())
+            }
             None => ("idle", String::new()),
         },
-        "UserPromptSubmit" | "PostToolUse" => ("working", String::new()),
+        "UserPromptSubmit" => ("working", String::new()),
+        "PostToolUse" => {
+            cause = format!("PostToolUse: {}", text(data.get("tool_name")));
+            ("working", String::new())
+        }
         _ => return None,
     };
     let cwd = text(data.get("cwd"));
@@ -278,6 +292,7 @@ pub fn record(
         "cwd": cwd,
         "project": basename(&cwd),
         "message": message,
+        "cause": cause,
         "updated": now,
         "pids": pids(),
     });
@@ -383,6 +398,21 @@ mod tests {
         let d = data(json!({"tool_name": "ExitPlanMode"}));
         let rec = record("PreToolUse", &d, 1, Vec::new).unwrap();
         assert_eq!(rec["message"], "Claude has a plan ready for your review");
+    }
+
+    #[test]
+    fn the_record_names_its_cause() {
+        let cause = |event: &str, d: Value| {
+            record(event, &d, 1, Vec::new).unwrap()["cause"].as_str().unwrap().to_string()
+        };
+        assert_eq!(cause("Stop", json!({})), "Stop");
+        assert_eq!(cause("Stop", json!({"last_assistant_message": "Ready to execute this plan?"})), "Stop (asks back)");
+        assert_eq!(cause("Stop", json!({"background_tasks": [{"id": "b1"}]})), "Stop (background jobs)");
+        assert_eq!(cause("Notification", json!({"notification_type": "idle_prompt"})), "Notification: idle_prompt");
+        assert_eq!(cause("PermissionRequest", json!({"tool_name": "Bash"})), "PermissionRequest: Bash");
+        assert_eq!(cause("PreToolUse", json!({"tool_name": "AskUserQuestion"})), "PreToolUse: AskUserQuestion");
+        assert_eq!(cause("PostToolUse", json!({"tool_name": "Edit"})), "PostToolUse: Edit");
+        assert_eq!(cause("UserPromptSubmit", json!({})), "UserPromptSubmit");
     }
 
     #[test]

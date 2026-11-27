@@ -7,7 +7,7 @@ import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, onPlex, onMs, onGh, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
-  type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
+  type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type AlertLogEntry, type HomePreset, BUILTIN_PRESETS,
   type Tile, type TileAction, type SoundName, type CalendarFeed, type FeedStatus, type GithubStatus, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_COLORS, FEED_COLOR, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
@@ -944,7 +944,29 @@ function aiHtml(): string {
     row("Idle alert after", `<input class="num" type="number" min="0" max="3600" data-k="aiIdle" value="${a.idle_alert_seconds}"> s`,
       "An idle session alerts after this many seconds"),
   ].join(""));
-  return usage + cc + server + alerts;
+  const log = card("Recent alerts", "What made the board alert, newest first. Updates every 3 s", [
+    ...(alertLog.length ? alertLog.map(alertLogRow) : [text("No alerts yet")]),
+    row("Log file", `<button type="button" data-act="alert-log-open">${icon("list", 13)}Open folder</button>`,
+      "alert_log.jsonl in .deskhub: every hook event and alert, the newest 2000 lines"),
+    ...(alertLogNote ? [text(alertLogNote)] : []),
+  ].join(""));
+  return usage + cc + server + alerts + log;
+}
+
+// Settings > AI > Recent alerts: the alert log, asked with the server status every 3 s.
+let alertLog: AlertLogEntry[] = [];
+let alertLogNote = "";
+const ALERT_KINDS: Record<string, string> = {
+  shown: "Alert shown", cleared: "Alert cleared", dismissed: "Dismissed", show: "Show tapped", allow: "Allowed", deny: "Denied",
+};
+
+function alertLogRow(e: AlertLogEntry): string {
+  const time = new Date(e.t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const what = e.kind === "event" ? (e.cause || e.state) : (ALERT_KINDS[e.kind] ?? e.kind);
+  const where = e.project ? `${e.source} - ${e.project}` : e.source;
+  const why = e.kind === "event" ? e.state : (e.cause || e.state);
+  const hint = [where, why, e.text].filter(Boolean).join(" · ");
+  return row(esc(`${time}  ${what}`), "", esc(hint));
 }
 
 // Claude Code on a server: the poller's status, asked every 3 s while the AI section is open.
@@ -966,6 +988,11 @@ function pollRemote() {
   const key = (x: RemoteStatus | null) => JSON.stringify(x);
   setInterval(() => {
     if (section !== "ai") return;
+    api.alertLog(50).then(next => {
+      if (JSON.stringify(next) === JSON.stringify(alertLog)) return;
+      alertLog = next;
+      if (section === "ai") render(true);
+    }).catch(() => undefined);
     api.remoteStatus().then(next => {
       if (key(next) === key(remote)) return;
       remote = next;
@@ -1287,6 +1314,9 @@ async function act(el: HTMLElement) {
     case "step": stepSlider(el.dataset.slider as SliderKey, Number(el.dataset.d)); return;
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
+    case "alert-log-open":
+      api.alertLogOpen().then(() => { alertLogNote = ""; }, err => { alertLogNote = String(err); }).finally(() => render(true));
+      return;
     case "plex-sign-in": await plexSignIn(); return;
     case "ms-sign-in": await msSignIn(); return;
     case "gh-sign-in": await ghSignIn(); return;

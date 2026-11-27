@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
+use super::alert_log::{self, Entry};
 use super::Ctx;
 use super::remote;
 use crate::protocol::Incoming;
@@ -42,6 +43,9 @@ pub struct Session {
     pub request: String,
     /// What the permission request asks for ("Bash: npm test"), "" when unknown.
     pub detail: String,
+    /// The hook event that wrote the record ("Stop", "Notification: idle_prompt"), for the
+    /// alert log. "" from an older deskhub-cli or relay.
+    pub cause: String,
 }
 
 /// The alert shown on the board.
@@ -120,6 +124,7 @@ pub fn parse_session(text: &str) -> Option<Session> {
         host: String::new(),
         request: str_of("request"),
         detail: str_of("detail"),
+        cause: str_of("cause"),
     })
 }
 
@@ -290,6 +295,16 @@ impl Tracker {
         }
     }
 
+    /// The alert the board shows now.
+    pub fn shown(&self) -> Option<&Alert> {
+        self.shown.as_ref()
+    }
+
+    /// A session from the last poll.
+    pub fn session(&self, sid: &str) -> Option<&Session> {
+        self.sessions.get(sid)
+    }
+
     /// Whether `sid` is a server's session (nothing to show on this PC).
     pub fn is_remote(&self, sid: &str) -> bool {
         self.sessions.get(sid).is_some_and(|d| !d.host.is_empty())
@@ -318,14 +333,30 @@ fn now_secs() -> f64 {
         .unwrap_or(0.0)
 }
 
-/// ~/.deskhub/claude_sessions, with the home folder from USERPROFILE on Windows and HOME elsewhere.
-fn sessions_dir() -> Option<PathBuf> {
+/// ~/.deskhub, with the home folder from USERPROFILE on Windows and HOME elsewhere.
+pub fn deskhub_dir() -> Option<PathBuf> {
     let home = if cfg!(windows) {
         std::env::var_os("USERPROFILE")
     } else {
         std::env::var_os("HOME")
     }?;
-    Some(PathBuf::from(home).join(".deskhub").join("claude_sessions"))
+    Some(PathBuf::from(home).join(".deskhub"))
+}
+
+/// ~/.deskhub/claude_sessions
+fn sessions_dir() -> Option<PathBuf> {
+    Some(deskhub_dir()?.join("claude_sessions"))
+}
+
+/// Append to the alert log; a failure is logged once and never stops the alerts.
+fn write_log(path: Option<&Path>, entries: &[Entry]) {
+    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let Some(path) = path else { return };
+    if let Err(e) = alert_log::append(path, entries) {
+        if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::warn!("alert log {}: {e}", path.display());
+        }
+    }
 }
 
 /// Read the session folder off the async runtime.
@@ -364,6 +395,8 @@ pub async fn run(ctx: Ctx) {
         remote,
     } = ctx;
     let root = sessions_dir();
+    let log_path = alert_log::path();
+    let mut watch = alert_log::Watch::default();
     let mut tracker = Tracker::default();
     let mut off_published = false;
     let mut incoming_open = true;
@@ -382,6 +415,7 @@ pub async fn run(ctx: Ctx) {
                 off_published = true;
             }
             tracker = Tracker::default();
+            watch = alert_log::Watch::default();
             if settings.changed().await.is_err() {
                 return;
             }
@@ -398,13 +432,29 @@ pub async fn run(ctx: Ctx) {
                 for (id, s) in &remote.borrow().sessions {
                     sessions.insert(format!("r-{id}"), s.clone());
                 }
+                let mut entries = watch.events(&sessions);
+                let before = tracker.shown().cloned();
                 if let Some(msg) = tracker.poll(sessions, now, foreground_pid(), idle_after) {
+                    match (tracker.shown(), &before) {
+                        (Some(a), _) => entries.push(alert_log::alert_entry("shown", a, tracker.session(&a.id), now)),
+                        (None, Some(a)) => entries.push(alert_log::alert_entry("cleared", a, tracker.session(&a.id), now)),
+                        (None, None) => {}
+                    }
                     out.publish(KEY, msg);
                 }
+                write_log(log_path.as_deref(), &entries);
             }
             msg = incoming.recv(), if incoming_open => match msg {
                 Ok(Incoming::AlertAction { id, action }) => {
                     let sid = sanitize_id(&id);
+                    let tapped = match action.as_str() {
+                        "dismiss" => "dismissed",
+                        "focus" => "show",
+                        other => other,
+                    };
+                    if let Some(s) = tracker.session(&sid) {
+                        write_log(log_path.as_deref(), &[alert_log::session_entry(tapped, s, now_secs())]);
+                    }
                     match action.as_str() {
                         "dismiss" => tracker.dismiss(&sid),
                         "focus" => {
@@ -630,6 +680,7 @@ mod tests {
             host: String::new(),
             request: String::new(),
             detail: String::new(),
+            cause: String::new(),
         }
     }
 
