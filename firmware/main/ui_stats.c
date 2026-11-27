@@ -6,7 +6,8 @@
 
 #define GAUGES 4
 #define GAUGE_W ((CONTENT_W - 3 * 12) / 4)
-#define HISTORY 60
+#define HISTORY 60   // points without the app's history (one per second)
+static lv_obj_t *s_caption;
 #define SWITCH_H 40                       // PC / Internet switcher
 #define VIEW_Y (SWITCH_H + 12)
 #define VIEW_H (CONTENT_H - VIEW_Y)        // 388
@@ -129,8 +130,8 @@ void stats_create(lv_obj_t *page)
     lv_obj_set_size(c, CONTENT_W, VIEW_H - GAUGE_H - 12);
     lv_obj_set_pos(c, 0, GAUGE_H + 12);
 
-    lv_obj_t *t = ui_caption(c, "LAST MINUTE");
-    lv_obj_set_pos(t, 0, 0);
+    s_caption = ui_caption(c, "LAST MINUTE");
+    lv_obj_set_pos(s_caption, 0, 0);
     lv_obj_t *cpu_key = ui_label(c, g_font_14, COL_ACCENT2, "\xE2\x80\xA2 CPU");
     lv_obj_set_pos(cpu_key, 150, 0);
     lv_obj_t *gpu_key = ui_label(c, g_font_14, COL_CYAN, "\xE2\x80\xA2 GPU");
@@ -237,6 +238,25 @@ void stats_refresh(void)
     snprintf(buf, sizeof(buf), "%s%s%s", s->cpu_name, s->gpu_name[0] ? "  /  " : "", s->gpu_name);
     lv_label_set_text(s_names, buf);
 
+    if (s->hist_count > 0) {
+        // The app's saved history: the whole chart in every message.
+        lv_label_set_text(s_caption, s->hist_label[0] ? s->hist_label : "LAST 24 HOURS");
+        if ((int)lv_chart_get_point_count(s_chart) != s->hist_count)
+            lv_chart_set_point_count(s_chart, s->hist_count);
+        for (int i = 0; i < s->hist_count; i++) {
+            lv_chart_set_value_by_id(s_chart, s_cpu_ser, i, s->cpu_hist[i] >= 0 ? s->cpu_hist[i] : LV_CHART_POINT_NONE);
+            lv_chart_set_value_by_id(s_chart, s_gpu_ser, i, s->gpu_hist[i] >= 0 ? s->gpu_hist[i] : LV_CHART_POINT_NONE);
+        }
+        lv_chart_refresh(s_chart);
+        return;
+    }
+    // An older app: one point per message, the last minute.
+    lv_label_set_text(s_caption, "LAST MINUTE");
+    if (lv_chart_get_point_count(s_chart) != HISTORY) {
+        lv_chart_set_point_count(s_chart, HISTORY);
+        lv_chart_set_all_value(s_chart, s_cpu_ser, LV_CHART_POINT_NONE);
+        lv_chart_set_all_value(s_chart, s_gpu_ser, LV_CHART_POINT_NONE);
+    }
     lv_chart_set_next_value(s_chart, s_cpu_ser, (int32_t)s->cpu);
     lv_chart_set_next_value(s_chart, s_gpu_ser, s->has_gpu ? (int32_t)s->gpu : LV_CHART_POINT_NONE);
 }

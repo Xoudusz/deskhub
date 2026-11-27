@@ -25,6 +25,8 @@ export type Settings = {
     brightness: number;
     night_brightness: number;
     clock_seconds: boolean;
+    /** Stats and Internet chart length on the board: 1, 24 or 168 hours. */
+    chart_hours: number;
     night: string;
     night_style: "off" | "clock" | "dim";
     pc_sleep: "off" | "clock" | "none";
@@ -200,7 +202,7 @@ const clone = <T>(v: T): T => structuredClone(v);
 // ---- mock backend (browser dev only) ----
 const mock: Settings = {
   board: { host: "deskhub.local", token: "" },
-  display: { brightness: 100, night_brightness: 0, night: "", night_style: "off", pc_sleep: "off", clock_seconds: false },
+  display: { brightness: 100, night_brightness: 0, night: "", night_style: "off", pc_sleep: "off", clock_seconds: false, chart_hours: 24 },
   pages: { enabled: ["home", "stats", "ai", "weather", "media", "shortcuts", "timer", "network"], nav: "left" },
   home: {
     header: true,
