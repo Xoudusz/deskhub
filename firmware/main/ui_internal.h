@@ -29,9 +29,20 @@
 #define COL_ACCENT2  0x6cb4ff   // blue: the first data series
 #define COL_CYAN     0x5ed3c6   // teal: the second data series
 #define COL_DATA3    0xb49cff   // lilac: the third data series
+#define COL_DATA4    0xf79ad3   // pink: the fourth data series (VRAM gauge)
 #define COL_GOOD     0x3dd68c
-#define COL_WARN     0xffb224
+#define COL_WARN     0xf3c14b   // yellow, apart from the amber accent
 #define COL_BAD      0xff6b6b
+#define COL_TRACK    0x3a3f49   // media progress track: visible on a card
+#define COL_WHITE    0xffffff   // text on user/game colours
+#define COL_BLACK    0x000000   // screensaver, dark badge behind game art
+#define COL_BRAND_CLAUDE 0xd97757
+#define COL_BRAND_CODEX  0x10a37f
+// GitHub contribution greens, levels 1-4 (level 0 = COL_CARD_HI)
+#define COL_GH_L1    0x0e4429
+#define COL_GH_L2    0x006d32
+#define COL_GH_L3    0x26a641
+#define COL_GH_L4    0x39d353
 
 // Layout: navigation rail on the left, pages to its right.
 // The navigation bar sits on the left (default), the right or along the bottom.

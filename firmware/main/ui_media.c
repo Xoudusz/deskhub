@@ -45,7 +45,6 @@ static void seek_cb(lv_event_t *e)
 // The block is centred in the card's height, so a card without buttons (Plex)
 // or with nothing playing doesn't leave an empty band at the bottom.
 
-#define TRACK_COL 0x3a3f49   // progress track: visible on a card
 
 typedef struct {
     bool server;
@@ -93,7 +92,7 @@ static lv_obj_t *row_button(media_row_t *r, int size, uint32_t bg, const char *g
 
 static void style_track(lv_obj_t *slider)
 {
-    lv_obj_set_style_bg_color(slider, lv_color_hex(TRACK_COL), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(COL_TRACK), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(slider, lv_color_hex(COL_TEXT), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_INDICATOR);

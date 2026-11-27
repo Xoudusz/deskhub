@@ -8,7 +8,7 @@ import { fillIcons, icon } from "./icons";
 import {
   api, win, TAURI, onStatus, onSettings, onPlex, onMs, onGh, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
-  type Tile, type TileAction, type SoundName, type CalendarFeed, type FeedStatus, type GithubStatus, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
+  type Tile, type TileAction, type SoundName, type CalendarFeed, type FeedStatus, type GithubStatus, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_COLORS, FEED_COLOR, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
 import { card, row, tgl, text, slider, select, esc } from "./ui";
 import { mountSim, onSimState, simState } from "./sim";
@@ -287,7 +287,7 @@ function calendarHtml(): string {
   const c = S.calendar;
   const feeds = c.feeds.map((f, i) => [
     row(`<input class="txt" data-k="calName" data-i="${i}" value="${esc(f.name)}" placeholder="Calendar ${i + 1}" spellcheck="false">`,
-      `<input type="color" data-k="calColor" data-i="${i}" value="${esc(f.color || "#7c9cff")}" title="Color on the board">` +
+      `<input type="color" data-k="calColor" data-i="${i}" value="${esc(f.color || FEED_COLOR)}" title="Color on the board">` +
         `<button type="button" class="ib" data-act="cal-remove" data-i="${i}" title="Remove">${icon("trash", 13)}</button>`),
     row(`<input class="txt" type="password" data-k="calUrl" data-i="${i}" value="${esc(f.url)}" placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics" autocomplete="off" spellcheck="false">`,
       "", feedStatusText(i)),
@@ -340,7 +340,7 @@ function outlookHtml(): string {
   const rows = c.ms_signed_in
     ? [
         row(`<input class="txt" data-k="msName" value="${esc(c.ms_name)}" placeholder="Outlook" spellcheck="false">`,
-          `<input type="color" data-k="msColor" value="${esc(c.ms_color || "#7c9cff")}" title="Color on the board">` +
+          `<input type="color" data-k="msColor" value="${esc(c.ms_color || FEED_COLOR)}" title="Color on the board">` +
             `<button type="button" data-act="ms-sign-out">${icon("x", 13)}Sign out</button>`, status),
       ]
     : msUrl
@@ -1233,7 +1233,7 @@ async function act(el: HTMLElement) {
     case "preset-save": savePreset(); return;
     case "home-reset": applyPreset(BUILTIN_PRESETS[0]); return;
     case "cal-add":
-      saveFeeds([...S.calendar.feeds, { name: "", url: "", color: "#7c9cff" }]);
+      saveFeeds([...S.calendar.feeds, { name: "", url: "", color: FEED_COLOR }]);
       render(true);
       return;
     case "cal-remove":
@@ -1251,7 +1251,7 @@ async function act(el: HTMLElement) {
       return;
     case "tile-select": selTile = Number(el.dataset.idx); render(true); return;
     case "tile-add": {
-      const tiles = [...S.tiles, { label: "New tile", icon: "apps", color: "#2b2f3a", action: "keys" as TileAction, target: "", state: null }];
+      const tiles = [...S.tiles, { label: "New tile", icon: "apps", color: TILE_COLORS.neutral, action: "keys" as TileAction, target: "", state: null }];
       selTile = tiles.length - 1;
       saveTiles(tiles);
       return;

@@ -112,16 +112,20 @@ export type TileAction = "keys" | "run" | "open" | "media" | "volume" | "lock" |
 export type CustomGame = { name: string; process: string[]; match: string; title: string; image: string; launch: string };
 
 export const MAX_TILES = 16;
+/** Tile colours of the example tiles (DESIGN.md tile-presets; settings.rs default_tiles). */
+export const TILE_COLORS = { red: "#b4413c", slate: "#3a4256", green: "#2f6f5e", neutral: "#2b2f3a", ochre: "#8a6d1f", violet: "#5b3fa0" } as const;
+/** A new calendar feed's colour on the board (DESIGN.md feed-default). */
+export const FEED_COLOR = "#7c9cff";
 /** The example tiles (settings.rs default_tiles). */
 export const EXAMPLE_TILES: Tile[] = [
-  { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
-  { label: "Mute sound", icon: "volume_off", color: "#3a4256", action: "volume", target: "mute", state: null },
-  { label: "Vol -", icon: "volume_down", color: "#3a4256", action: "volume", target: "down", state: null },
-  { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
-  { label: "Screenshot", icon: "screenshot_monitor", color: "#2f6f5e", action: "keys", target: "win+shift+s", state: null },
-  { label: "Terminal", icon: "terminal", color: "#2b2f3a", action: "run", target: "wt.exe", state: null },
-  { label: "Downloads", icon: "folder", color: "#8a6d1f", action: "open", target: "~/Downloads", state: null },
-  { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
+  { label: "Mute mic", icon: "mic_off", color: TILE_COLORS.red, action: "mic", target: "", state: null },
+  { label: "Mute sound", icon: "volume_off", color: TILE_COLORS.slate, action: "volume", target: "mute", state: null },
+  { label: "Vol -", icon: "volume_down", color: TILE_COLORS.slate, action: "volume", target: "down", state: null },
+  { label: "Vol +", icon: "volume_up", color: TILE_COLORS.slate, action: "volume", target: "up", state: null },
+  { label: "Screenshot", icon: "screenshot_monitor", color: TILE_COLORS.green, action: "keys", target: "win+shift+s", state: null },
+  { label: "Terminal", icon: "terminal", color: TILE_COLORS.neutral, action: "run", target: "wt.exe", state: null },
+  { label: "Downloads", icon: "folder", color: TILE_COLORS.ochre, action: "open", target: "~/Downloads", state: null },
+  { label: "Lock PC", icon: "lock", color: TILE_COLORS.violet, action: "lock", target: "", state: null },
 ];
 /** Icons the board has for tiles (config.example.toml). */
 export const TILE_ICONS = (
@@ -209,10 +213,10 @@ const mock: Settings = {
   appearance: { theme: "midnight", board_theme: "same" },
   ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30, remote_url: "" },
   tiles: [
-    { label: "Mute mic", icon: "mic_off", color: "#b4413c", action: "mic", target: "", state: null },
-    { label: "Vol +", icon: "volume_up", color: "#3a4256", action: "volume", target: "up", state: null },
-    { label: "Screenshot", icon: "screenshot_monitor", color: "#2f6f5e", action: "keys", target: "win+shift+s", state: null },
-    { label: "Lock PC", icon: "lock", color: "#5b3fa0", action: "lock", target: "", state: null },
+    { label: "Mute mic", icon: "mic_off", color: TILE_COLORS.red, action: "mic", target: "", state: null },
+    { label: "Vol +", icon: "volume_up", color: TILE_COLORS.slate, action: "volume", target: "up", state: null },
+    { label: "Screenshot", icon: "screenshot_monitor", color: TILE_COLORS.green, action: "keys", target: "win+shift+s", state: null },
+    { label: "Lock PC", icon: "lock", color: TILE_COLORS.violet, action: "lock", target: "", state: null },
   ],
   games: { steam: true, presets: true, presets_disabled: [], custom: [] },
   location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },

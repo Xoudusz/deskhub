@@ -17,7 +17,7 @@ static lv_obj_t *s_chart, *s_net, *s_disk, *s_offline, *s_names;
 static lv_chart_series_t *s_cpu_ser, *s_gpu_ser;
 
 static const char *NAMES[GAUGES] = {"CPU", "GPU", "RAM", "VRAM"};
-static const uint32_t COLORS[GAUGES] = {COL_ACCENT2, COL_CYAN, COL_DATA3, 0xf79ad3};
+static const uint32_t COLORS[GAUGES] = {COL_ACCENT2, COL_CYAN, COL_DATA3, COL_DATA4};
 
 static void make_gauge(lv_obj_t *page, int i)
 {

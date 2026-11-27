@@ -87,7 +87,7 @@ void games_placeholder_init(lv_obj_t *ph, const lv_font_t *font)
 {
     lv_obj_set_style_radius(ph, 10, 0);
     lv_obj_set_style_bg_opa(ph, LV_OPA_COVER, 0);
-    lv_obj_t *l = ui_label(ph, font, 0xFFFFFF, "");
+    lv_obj_t *l = ui_label(ph, font, COL_WHITE, "");
     lv_obj_center(l);
 }
 
@@ -317,7 +317,7 @@ void games_page_create(lv_obj_t *page)
         // Total playtime, as a small badge on the cover.
         lv_obj_t *hrs = ui_label(b, g_font_14, COL_TEXT, "");
         lv_obj_remove_flag(hrs, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_bg_color(hrs, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_color(hrs, lv_color_hex(COL_BLACK), 0);
         lv_obj_set_style_bg_opa(hrs, LV_OPA_70, 0);
         lv_obj_set_style_radius(hrs, 8, 0);
         lv_obj_set_style_pad_hor(hrs, 6, 0);
