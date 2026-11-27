@@ -30,7 +30,7 @@ int github_total_weeks(void)
 
 static uint32_t level_color(int level)
 {
-    static const uint32_t green[5] = {0, 0x0e4429, 0x006d32, 0x26a641, 0x39d353};
+    static const uint32_t green[5] = {0, COL_GH_L1, COL_GH_L2, COL_GH_L3, COL_GH_L4};
     if (level <= 0 || level > 4) return COL_CARD_HI;
     if (!g_github.accent) return green[level];
     // Shades of the accent over the empty square: 30%, 55%, 80%, 100%.
@@ -41,7 +41,7 @@ static uint32_t level_color(int level)
 
 static uint32_t bar_color(void)
 {
-    return g_github.accent ? COL_ACCENT : 0x26a641;
+    return g_github.accent ? COL_ACCENT : COL_GH_L3;
 }
 
 static void chart_draw_cb(lv_event_t *e)

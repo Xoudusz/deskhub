@@ -8,7 +8,7 @@ description: >
   "classic" look (firmware ui.c / ui_internal.h); app themes are in ## Colors.
 colors:
   primary: "#ffb224"          # COL_ACCENT
-  primary-pressed: "#d9931a"  # COL_ACCENT_PRESSED
+  primary-pressed: "#d9971f"  # COL_ACCENT_PRESSED (= theme.rs: accent 15 % toward black)
   on-primary: "#16181d"       # COL_ON_ACCENT
   background: "#0d0e11"       # COL_BG
   rail: "#111216"             # COL_RAIL (nav rail / bottom dock)
@@ -20,22 +20,22 @@ colors:
   text-muted: "#9aa0aa"       # COL_MUTED
   text-dim: "#6b717c"         # COL_DIM (icons/placeholders only, not body text)
   success: "#3dd68c"          # COL_GOOD
-  warning: "#ffb224"          # COL_WARN
+  warning: "#f3c14b"          # COL_WARN (yellow, apart from the amber accent)
   error: "#ff6b6b"            # COL_BAD
   data:
     series-1: "#6cb4ff"       # COL_ACCENT2 (CPU, upload, rain)
     series-2: "#5ed3c6"       # COL_CYAN (GPU, download)
     series-3: "#b49cff"       # COL_DATA3
-    series-4: "#f79ad3"       # ui_stats.c gauge 4 (not a constant yet)
+    series-4: "#f79ad3"       # COL_DATA4
   brand:
-    claude: "#d97757"
-    codex: "#10a37f"
-  github:
+    claude: "#d97757"       # COL_BRAND_CLAUDE
+    codex: "#10a37f"        # COL_BRAND_CODEX
+  github:                     # COL_GH_L1..L4
     level-1: "#0e4429"
     level-2: "#006d32"
     level-3: "#26a641"
     level-4: "#39d353"
-  media-track: "#3a3f49"      # ui_media.c TRACK_COL
+  media-track: "#3a3f49"      # COL_TRACK
 typography:
   caption:
     fontFamily: Inter
@@ -170,7 +170,9 @@ Code names (board): `background`=COL_BG, `rail`=COL_RAIL, `surface`=COL_CARD (CO
 alias), `surface-raised`=COL_CARD_HI, `border`=COL_BORDER, `pressed`=COL_PRESSED, `text`=COL_TEXT,
 `text-muted`=COL_MUTED, `text-dim`=COL_DIM, `primary`=COL_ACCENT, `primary-pressed`=COL_ACCENT_PRESSED,
 `on-primary`=COL_ON_ACCENT. Not themed (compile-time constants): `success`=COL_GOOD, `warning`=COL_WARN,
-`error`=COL_BAD, `data.series-1..3`=COL_ACCENT2/COL_CYAN/COL_DATA3.
+`error`=COL_BAD, `data.series-1..4`=COL_ACCENT2/COL_CYAN/COL_DATA3/COL_DATA4, `media-track`=COL_TRACK,
+`brand.*`=COL_BRAND_*, `github.level-*`=COL_GH_L*, `fixed.white/black`=COL_WHITE/COL_BLACK.
+Status colours are the same on board and app (`--good`/`--warn`/`--bad`).
 
 Level colours: values >= 80 % `error`, >= 50 % `warning`, else `success` (`ui_level_color`).
 Wi-Fi RSSI >= -62 dBm `success`, >= -74 `warning`, else `error`.
@@ -181,14 +183,15 @@ GitHub chart: level 0 = `surface-raised`; levels 1-4 green (`github.*`) or, in a
 
 Shared variables (`:root` in `styles.css`): `--fg` = text, `--muted`, `--dim` (lighter than
 `--muted` in the app, the reverse of the board), `--good`, `--bad`, `--warn`, each with a `-bg` tint
-at 12 % alpha, `--accent-bg` = accent at 12 %, `--radius` 10px.
+at 12 % alpha, `--accent-bg` = accent at 12 %, `--on-accent` (white; graphite: `--panel`, the same
+luminance rule as `theme.rs`), `--radius` 10px.
 
 ```yaml
 app-shared:
   fg: "#e3e9f5"
   muted: "#8a97b0"
   dim: "#b4bfd4"
-  good: "#3ecf8e"
+  good: "#3dd68c"
   bad: "#ff6b6b"
   warn: "#f3c14b"
 ```
@@ -207,12 +210,12 @@ themes:
   rose:     { accent: "#e0569b", accent2: "#ff9cc8", bg: "#16080f", bg2: "#1b0b13", panel: "#241019", panel2: "#1d0d15", panel3: "#301624", line: "#4a2236", line2: "#66304b" }
 ```
 
-Other palettes in use (to become tokens; see Do's and Don'ts):
+Other palettes, each defined once in code (games: `ui_games.c name_color`, weather: `weather_data.c`):
 
 ```yaml
 games-initials: ["#2f5d8a", "#2e7d6b", "#6b4e9b", "#9a4a5a", "#8a6a2f", "#4a6b2f", "#34707f", "#7a4a2e"]
-tile-presets: ["#b4413c", "#3a4256", "#2f6f5e", "#2b2f3a", "#8a6d1f", "#5b3fa0"]
-feed-default: "#7c9cff"
+tile-presets: ["#b4413c", "#3a4256", "#2f6f5e", "#2b2f3a", "#8a6d1f", "#5b3fa0"]   # api.ts TILE_COLORS; --tile-default = #2b2f3a
+feed-default: "#7c9cff"                                                      # api.ts FEED_COLOR
 weather-icons:                      # weather_data.c, by weather code
   clear-day: "#fbbf5a"
   clear-night: "#c08cff"            # also thunderstorm
@@ -222,8 +225,8 @@ weather-icons:                      # weather_data.c, by weather code
   snow: "#e6f0ff"
   rain: "#67e8f9"
 fixed:
-  white: "#ffffff"                  # games initials text, app toggle knob/slider thumb, on-accent fallback
-  black: "#000000"                  # screensaver, playtime badge (70 %), app board preview
+  white: "#ffffff"                  # COL_WHITE / --white: games initials text, app slider thumb, --on-accent
+  black: "#000000"                  # COL_BLACK / --black: screensaver, playtime badge (70 %), app board preview
 data-fallbacks:                     # hub_dispatch.c defaults when a message has no colour
   tile: "#2a2f3a"
   ams-slot: "#444444"
@@ -243,7 +246,8 @@ titles/empty states 24, page titles 32, big numbers 48.
 Icons: Material Icons at 20 (dock status), 24 (side-rail status, small buttons), 32 (rail tabs,
 buttons up to 56), 48 (media controls, tiles), 80 (weather, empty states).
 
-App: `--body` "IBM Plex Sans", system-ui; `--mono` "IBM Plex Mono", ui-monospace. Body 15px/1.4.
+App: `--body` "IBM Plex Sans" (400, 600), `--mono` "IBM Plex Mono" (500), bundled with @fontsource
+(imports at the top of `main.ts`), system-ui / ui-monospace as fallback. Body 15px/1.4.
 Settings: section header .72rem uppercase, letter-spacing .07em, accent colour; rows .82rem
 (compact .78rem); sub text .72rem; nav .8rem; buttons .84rem (.74rem in rows); codes 600 mono.
 
@@ -315,9 +319,8 @@ filled accent), status dot 8 px.
 - Do take colours from the `COL_*` macros / CSS variables; don't add hex literals in UI code
   (use the design-use skill and its checker).
 - Don't use `text-dim` for body text (3.6:1 on surface): icons and placeholders only.
-- Known issues to clean up: games initials, tile presets, GitHub greens, brand colours, gauge 4 and
-  the media track are literals (see the palettes above); `ui_alert.c` uses COL_BG instead of
-  COL_ON_ACCENT for the primary button label; `--text` and `--on-accent` are used in
-  `settings.css` but never defined; board vs app drift (good #3dd68c vs #3ecf8e, warn #ffb224 vs
-  #f3c14b, classic text #f3f4f6 vs app #e3e9f5); classic accent_pressed #d9931a differs from the
-  `theme.rs` formula (#d9971f); `--display` (Cinzel) is unused and no web fonts are bundled.
+- Classic text (#f3f4f6) differs from the app themes' text (#e3e9f5) on purpose: classic is the
+  board's own built-in look; app themes send the app's text colour.
+- Known issues: none open. Fixed 2026-11-27: colour literals moved to named constants, alert
+  button label uses COL_ON_ACCENT, `--text`/`--on-accent` defined, board/app status colours
+  unified, classic accent_pressed matches `theme.rs`, unused `--display` removed.

@@ -96,7 +96,7 @@ static lv_obj_t *pill(lv_obj_t *parent, const char *text, bool primary, lv_event
     lv_obj_set_style_border_width(b, primary ? 0 : 1, 0);
     lv_obj_set_style_bg_color(b, lv_color_hex(COL_ACCENT_PRESSED), LV_STATE_PRESSED);
     lv_obj_set_ext_click_area(b, 6);
-    lv_obj_t *l = ui_label(b, g_font_20, primary ? COL_BG : COL_TEXT, text);
+    lv_obj_t *l = ui_label(b, g_font_20, primary ? COL_ON_ACCENT : COL_TEXT, text);
     lv_obj_center(l);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     return b;

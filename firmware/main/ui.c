@@ -68,12 +68,12 @@ int g_nav = NAV_LEFT;
 static const hub_theme_t k_theme_default = {
     .bg = 0x0d0e11, .rail = 0x111216, .card = 0x16181d, .card_hi = 0x262a32, .border = 0x262a32,
     .pressed = 0x30343d, .text = 0xf3f4f6, .muted = 0x9aa0aa, .dim = 0x6b717c,
-    .accent = 0xffb224, .on_accent = 0x16181d, .accent_pressed = 0xd9931a,
+    .accent = 0xffb224, .on_accent = 0x16181d, .accent_pressed = 0xd9971f,
 };
 hub_theme_t g_theme = {
     .bg = 0x0d0e11, .rail = 0x111216, .card = 0x16181d, .card_hi = 0x262a32, .border = 0x262a32,
     .pressed = 0x30343d, .text = 0xf3f4f6, .muted = 0x9aa0aa, .dim = 0x6b717c,
-    .accent = 0xffb224, .on_accent = 0x16181d, .accent_pressed = 0xd9931a,
+    .accent = 0xffb224, .on_accent = 0x16181d, .accent_pressed = 0xd9971f,
 };
 
 void ui_theme_defaults(hub_theme_t *t)
@@ -161,7 +161,7 @@ const char *ui_agent_name(void)
 
 uint32_t ui_agent_color(void)
 {
-    return agent_is_codex() ? 0x10a37f : 0xd97757;
+    return agent_is_codex() ? COL_BRAND_CODEX : COL_BRAND_CLAUDE;
 }
 
 // ---- shared helpers --------------------------------------------------------
