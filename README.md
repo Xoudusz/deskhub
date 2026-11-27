@@ -721,6 +721,8 @@ Run `serve` as a service (a systemd unit with `EnvironmentFile=` holding those v
 
 **Allow / Deny on the board.** A permission request from the server shows what it asks for ("Bash: npm test", a file path or a URL) with **Allow** and **Deny** buttons: on Home as a check and a cross, on the AI page next to **Not now**. Tapping one answers Claude Code on the server, once: it never adds an "always allow" rule. The terminal dialog stays open meanwhile, and whichever answers first wins; an answer that comes too late is refused. `deskhub-relay install-hooks` turns this on (the marker file `~/.deskhub/board_decisions`); delete that file to turn it off.
 
+**Or open your SSH client instead.** If you answer in the terminal anyway, set Settings > AI > *Claude Code on a server* > **Show on PC opens**, for example `Termius.exe`. A server's alert then shows **Show on PC** instead of Allow and Deny: tapping it brings that program to the front (or starts it when it isn't running; a full path or a URL works too). The dialog in the terminal stays as it is.
+
 The relay sends only session state, project folder name, Claude's notification text, what a permission request asks for and hourly token counts per model. It speaks plain HTTP with a token, so use it only on your own network or over a VPN: anyone with the token on your network could answer a waiting permission request.
 
 ## Shortcuts

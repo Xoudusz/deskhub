@@ -245,6 +245,9 @@ pub struct Tracker {
     sessions: HashMap<String, Session>,
     /// What the board was last told.
     shown: Option<Alert>,
+    /// Settings > AI "Show on PC opens" is set: a server's alerts get Show on PC, not
+    /// Allow / Deny.
+    pub open_remote: bool,
 }
 
 impl Tracker {
@@ -259,7 +262,13 @@ impl Tracker {
     ) -> Option<Value> {
         self.sessions = sessions;
         self.mark_seen(fg_pid);
-        let new = pick(&self.sessions, now, idle_after, &self.dismissed);
+        let new = pick(&self.sessions, now, idle_after, &self.dismissed).map(|mut a| {
+            if self.open_remote && self.is_remote(&a.id) {
+                a.focus = true;
+                a.decide = false;
+            }
+            a
+        });
         if new == self.shown {
             return None;
         }
@@ -363,9 +372,9 @@ pub async fn run(ctx: Ctx) {
 
     loop {
         // borrow_and_update marks the value seen, so changed() below waits for the next change.
-        let (enabled, idle_after) = {
+        let (enabled, idle_after, remote_open) = {
             let s = settings.borrow_and_update();
-            (s.ai.alerts, s.ai.idle_alert_seconds.max(0) as f64)
+            (s.ai.alerts, s.ai.idle_alert_seconds.max(0) as f64, s.ai.remote_open.trim().to_string())
         };
         if !enabled {
             if !off_published {
@@ -379,6 +388,7 @@ pub async fn run(ctx: Ctx) {
             continue;
         }
         off_published = false;
+        tracker.open_remote = !remote_open.is_empty();
 
         tokio::select! {
             _ = ticker.tick() => {
@@ -398,9 +408,13 @@ pub async fn run(ctx: Ctx) {
                     match action.as_str() {
                         "dismiss" => tracker.dismiss(&sid),
                         "focus" => {
-                            // A server's session has no window here: Show only dismisses.
+                            // A server's session has no window here: Show brings up the app
+                            // from Settings > AI (an SSH client, say), or only dismisses.
                             if !tracker.is_remote(&sid) {
                                 focus_async(root.clone(), sid.clone(), now_secs()).await;
+                            } else if !remote_open.is_empty() {
+                                let (target, id) = (remote_open.clone(), sid.clone());
+                                tokio::task::spawn_blocking(move || log::info!("alert {id}: {}", show_app(&target)));
                             }
                             // Focusing counts as seen.
                             tracker.dismiss(&sid);
@@ -453,24 +467,18 @@ fn foreground_pid() -> u32 {
     0
 }
 
-/// Bring the window of the first pid that owns a visible top-level window to the front.
+/// Visible, unowned top-level windows as (pid, hwnd), in z-order.
 #[cfg(windows)]
-fn focus_pids(pids: &[u32]) -> String {
-    use std::ffi::c_void;
+fn top_windows() -> Vec<(u32, isize)> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        keybd_event, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_MENU,
-    };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FlashWindowEx, GetWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-        SetForegroundWindow, ShowWindow, FLASHWINFO, FLASHW_ALL, FLASHW_TIMERNOFG, GW_OWNER,
-        SW_RESTORE,
+        EnumWindows, GetWindow, GetWindowThreadProcessId, IsWindowVisible, GW_OWNER,
     };
 
     // Collects (pid, hwnd) for visible top-level windows. lparam is the &mut Vec below.
     unsafe extern "system" fn visit(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        // SAFETY: focus_pids passes a live Vec for the whole EnumWindows call.
+        // SAFETY: top_windows passes a live Vec for the whole EnumWindows call.
         let found = unsafe { &mut *(lparam.0 as *mut Vec<(u32, isize)>) };
         if unsafe { IsWindowVisible(hwnd) }.as_bool() {
             let mut pid = 0u32;
@@ -489,40 +497,120 @@ fn focus_pids(pids: &[u32]) -> String {
     let mut found: Vec<(u32, isize)> = Vec::new();
     // SAFETY: visit only touches `found` through the lparam pointer, alive for this call.
     let _ = unsafe { EnumWindows(Some(visit), LPARAM(&mut found as *mut _ as isize)) };
+    found
+}
 
+/// Restore and focus a window; flashes it when Windows refuses the focus change.
+#[cfg(windows)]
+fn bring_to_front(h: isize) -> bool {
+    use std::ffi::c_void;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        keybd_event, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_MENU,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FlashWindowEx, IsIconic, SetForegroundWindow, ShowWindow, FLASHWINFO, FLASHW_ALL,
+        FLASHW_TIMERNOFG, SW_RESTORE,
+    };
+
+    let hwnd = HWND(h as *mut c_void);
+    // SAFETY: window and input calls on a window handle from top_windows.
+    unsafe {
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        // Windows refuses focus changes from background apps unless a key was just
+        // pressed, so tap Alt first.
+        keybd_event(VK_MENU.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
+        keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+        if SetForegroundWindow(hwnd).as_bool() {
+            return true;
+        }
+        let info = FLASHWINFO {
+            cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
+            hwnd,
+            dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
+            uCount: 3,
+            dwTimeout: 0,
+        };
+        let _ = FlashWindowEx(&info);
+    }
+    false
+}
+
+/// Bring the window of the first pid that owns a visible top-level window to the front.
+#[cfg(windows)]
+fn focus_pids(pids: &[u32]) -> String {
+    let found = top_windows();
     for &pid in pids {
         let Some(&(_, h)) = found.iter().find(|(p, _)| *p == pid) else {
             continue;
         };
-        let hwnd = HWND(h as *mut c_void);
-        // SAFETY: window and input calls on a window handle found above.
-        unsafe {
-            if IsIconic(hwnd).as_bool() {
-                let _ = ShowWindow(hwnd, SW_RESTORE);
-            }
-            // Windows refuses focus changes from background apps unless a key was just
-            // pressed, so tap Alt first.
-            keybd_event(VK_MENU.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
-            keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-            if SetForegroundWindow(hwnd).as_bool() {
-                return format!("focused window of pid {pid}");
-            }
-            let info = FLASHWINFO {
-                cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
-                hwnd,
-                dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
-                uCount: 3,
-                dwTimeout: 0,
-            };
-            let _ = FlashWindowEx(&info);
-        }
-        return format!("could not focus window of pid {pid}, flashed it instead");
+        return if bring_to_front(h) {
+            format!("focused window of pid {pid}")
+        } else {
+            format!("could not focus window of pid {pid}, flashed it instead")
+        };
     }
     "no window found for the session".to_string()
 }
 
 #[cfg(not(windows))]
 fn focus_pids(_pids: &[u32]) -> String {
+    "not supported on this OS".to_string()
+}
+
+/// The lower-case program file name in `target` ("Termius.exe", "C:\...\Termius.exe"), if
+/// it names an .exe.
+pub fn exe_of(target: &str) -> Option<String> {
+    let t = target.trim().trim_matches('"');
+    let name = t.rsplit(['\\', '/']).next().unwrap_or(t).to_ascii_lowercase();
+    (name.len() > 4 && name.ends_with(".exe")).then_some(name)
+}
+
+/// The full path of a process's program, if this user may ask.
+#[cfg(windows)]
+fn exe_path(pid: u32) -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    // SAFETY: the handle is closed below; the buffer outlives the call.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(h);
+        ok.then(|| String::from_utf16_lossy(&buf[..len as usize]))
+    }
+}
+
+/// Settings > AI "Show on PC opens": focus the program's window when it runs (an .exe
+/// target), else open the target like an "open" tile (program, path or URL).
+#[cfg(windows)]
+fn show_app(target: &str) -> String {
+    if let Some(exe) = exe_of(target) {
+        for (pid, h) in top_windows() {
+            if exe_path(pid).and_then(|p| exe_of(&p)).as_deref() == Some(exe.as_str()) {
+                return if bring_to_front(h) {
+                    format!("focused {exe}")
+                } else {
+                    format!("could not focus {exe}, flashed it instead")
+                };
+            }
+        }
+    }
+    super::shortcuts::open_target(target.trim().trim_matches('"'));
+    format!("opened {target}")
+}
+
+#[cfg(not(windows))]
+fn show_app(target: &str) -> String {
+    super::shortcuts::open_target(target);
     "not supported on this OS".to_string()
 }
 
@@ -596,6 +684,31 @@ mod tests {
         s.project.clear();
         let a = pick(&map(vec![("r-x", s)]), NOW, 30.0, &HashMap::new()).unwrap();
         assert_eq!(a.project, "vibecode");
+    }
+
+    #[test]
+    fn show_on_pc_opens_an_app_for_a_servers_alert() {
+        let mut s = sess("permission", 5.0, "Claude wants to use Bash", "deskhub", &[]);
+        s.host = "vibecode".into();
+        s.request = "abc123".into();
+        let mut t = Tracker { open_remote: true, ..Default::default() };
+        let msg = t.poll(map(vec![("r-x1", s.clone())]), NOW, 0, 30.0).expect("an alert");
+        // No Allow / Deny: the board shows Show on PC.
+        assert!(msg.get("decide").is_none());
+        assert!(msg.get("focus").is_none());
+        // Turning it off brings Allow / Deny back on the next poll.
+        t.open_remote = false;
+        let msg = t.poll(map(vec![("r-x1", s)]), NOW, 0, 30.0).expect("changed");
+        assert_eq!((msg["decide"].as_bool(), msg["focus"].as_bool()), (Some(true), Some(false)));
+    }
+
+    #[test]
+    fn exe_names() {
+        assert_eq!(exe_of("Termius.exe").as_deref(), Some("termius.exe"));
+        assert_eq!(exe_of(r#""C:\Users\me\AppData\Local\Programs\Termius\Termius.exe""#).as_deref(), Some("termius.exe"));
+        assert_eq!(exe_of("termius://"), None);
+        assert_eq!(exe_of("C:/tools/"), None);
+        assert_eq!(exe_of(".exe"), None);
     }
 
     #[test]

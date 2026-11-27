@@ -31,7 +31,7 @@ export type Settings = {
   home: { header: boolean; grid: GridCell[]; presets: HomePreset[] };
   location: Location;
   appearance: { theme: "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose"; board_theme: "same" | "classic" | "purple" | "blue" | "graphite" | "midnight" | "teal" | "rose" };
-  ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number; remote_url: string };
+  ai: { agent: "auto" | "claude" | "codex"; live_limits: boolean; alerts: boolean; idle_alert_seconds: number; remote_url: string; remote_open: string };
   tiles: Tile[];
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   media_server: MediaServer;
@@ -211,7 +211,7 @@ const mock: Settings = {
     presets: [],
   },
   appearance: { theme: "midnight", board_theme: "same" },
-  ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30, remote_url: "" },
+  ai: { agent: "auto", live_limits: false, alerts: true, idle_alert_seconds: 30, remote_url: "", remote_open: "" },
   tiles: [
     { label: "Mute mic", icon: "mic_off", color: TILE_COLORS.red, action: "mic", target: "", state: null },
     { label: "Vol +", icon: "volume_up", color: TILE_COLORS.slate, action: "volume", target: "up", state: null },

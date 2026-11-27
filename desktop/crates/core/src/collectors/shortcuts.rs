@@ -478,6 +478,10 @@ mod sys {
         }
     }
 
+    pub fn open_target(path: &str) {
+        open(path);
+    }
+
     fn open(path: &str) {
         let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
         let verb: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
@@ -545,9 +549,18 @@ mod sys {
     }
 }
 
+/// Opens a path, program or URL like the "open" tile action (ShellExecute "open").
+pub(crate) fn open_target(target: &str) {
+    sys::open_target(target);
+}
+
 #[cfg(not(windows))]
 mod sys {
     use super::*;
+
+    pub fn open_target(target: &str) {
+        log::debug!("open {target:?}: not supported on this platform");
+    }
 
     pub fn perform(action: &Action) {
         log::debug!("shortcut {action:?}: not supported on this platform");
