@@ -17,6 +17,7 @@ const CLASSIC: Palette = Palette {
     muted: 0x9aa0aa,
     dim: 0x6b717c,
     accent: 0xffb224,
+    on_accent: None,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +32,8 @@ pub struct Palette {
     pub muted: u32,
     pub dim: u32,
     pub accent: u32,
+    /// Text on the accent when the luminance rule picks badly (None: the rule).
+    pub on_accent: Option<u32>,
 }
 
 /// styles.css variables per theme: bg, panel2 (rail), panel (card), panel3 (card_hi),
@@ -55,7 +58,15 @@ fn app_palette(theme: Theme) -> Palette {
         Theme::Rose => (
             0x16080f, 0x1d0d15, 0x241019, 0x301624, 0x4a2236, 0x66304b, 0x8a97b0, 0xe0569b,
         ),
+        Theme::Slate => (
+            0x0f1115, 0x12151a, 0x181c22, 0x232831, 0x222731, 0x2b313c, 0x97a0ad, 0x8fb0d6,
+        ),
+        Theme::Sage => (
+            0x101211, 0x131614, 0x191d1b, 0x242a27, 0x232926, 0x2d3430, 0x9aa59f, 0x9cc2a5,
+        ),
     };
+    // The calm accents are mid-light: white on them is ~2:1, the card colour is ~7:1.
+    let on_accent = matches!(theme, Theme::Slate | Theme::Sage).then_some(card);
     Palette {
         bg,
         rail,
@@ -67,6 +78,7 @@ fn app_palette(theme: Theme) -> Palette {
         muted,
         dim: mix(muted, card, 0.45),
         accent,
+        on_accent,
     }
 }
 
@@ -81,6 +93,8 @@ pub fn palette(s: &Settings) -> Palette {
         BoardTheme::Midnight => Theme::Midnight,
         BoardTheme::Teal => Theme::Teal,
         BoardTheme::Rose => Theme::Rose,
+        BoardTheme::Slate => Theme::Slate,
+        BoardTheme::Sage => Theme::Sage,
     };
     app_palette(theme)
 }
@@ -101,7 +115,7 @@ pub fn theme_message(s: &Settings) -> Value {
         "dim": p.dim,
         "accent": p.accent,
         // Dark text on light accents (amber, graphite), white on the rest.
-        "on_accent": if luminance(p.accent) > 0.45 { p.card } else { 0xffffff },
+        "on_accent": p.on_accent.unwrap_or(if luminance(p.accent) > 0.45 { p.card } else { 0xffffff }),
         "accent_pressed": mix(p.accent, 0x000000, 0.15),
     })
 }
@@ -174,6 +188,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(old.appearance.board_theme, BoardTheme::Same);
+    }
+
+    #[test]
+    fn calm_themes_have_dark_text_on_the_accent() {
+        let mut s = Settings::default();
+        s.appearance.theme = Theme::Slate;
+        let v = theme_message(&s);
+        assert_eq!((v["accent"].as_u64(), v["on_accent"].as_u64()), (Some(0x8fb0d6), Some(0x181c22)));
+        s.appearance.board_theme = BoardTheme::Sage;
+        let v = theme_message(&s);
+        assert_eq!((v["accent"].as_u64(), v["on_accent"].as_u64()), (Some(0x9cc2a5), Some(0x191d1b)));
+        let p = palette(&s);
+        assert!(contrast(p.card, p.accent) >= 4.5 && contrast(p.text, p.card) >= 4.5 && contrast(p.muted, p.card) >= 4.5);
+        let theme: Settings = serde_json::from_value(serde_json::json!({"appearance": {"theme": "slate", "board_theme": "sage"}})).unwrap();
+        assert_eq!((theme.appearance.theme, theme.appearance.board_theme), (Theme::Slate, BoardTheme::Sage));
+    }
+
+    fn contrast(a: u32, b: u32) -> f64 {
+        let (x, y) = (luminance(a), luminance(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
     }
 
     #[test]
