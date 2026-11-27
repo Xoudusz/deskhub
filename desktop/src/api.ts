@@ -15,7 +15,7 @@ export type ClaudeState = { statusline: boolean; hooks: boolean; cli: boolean };
 export type RemoteStatus = { configured: boolean; token_saved: boolean; ok: boolean; error: string; host: string; sessions: number };
 export type CalendarFeed = { name: string; url: string; color: string };
 export type FeedStatus = { name: string; ok: boolean; error: string; events: number };
-export type GithubStatus = { token_saved: boolean; pending: boolean; ok: boolean; error: string; login: string; total: number };
+export type GithubStatus = { token_saved: boolean; signed_in: boolean; pending: boolean; ok: boolean; error: string; login: string; total: number };
 
 export type Settings = {
   board: { host: string; token: string };
@@ -230,6 +230,7 @@ const subs = {
   sim: new Set<(f: SimFrame) => void>(),
   plex: new Set<(o: PlexOutcome) => void>(),
   ms: new Set<(o: PlexOutcome) => void>(),
+  gh: new Set<(o: PlexOutcome) => void>(),
 };
 
 /** One frame for the simulator, as the board would get it: JSON, or a binary frame in base64. */
@@ -279,6 +280,7 @@ setTimeout(() => {
 
 // ---- API ----
 let mockGithubToken = false;
+let mockGithubSignedIn = false;
 let mockRemoteToken = false;
 
 export const api = {
@@ -396,7 +398,25 @@ export const api = {
   },
   githubStatus: (): Promise<GithubStatus> =>
     TAURI ? invoke<GithubStatus>("github_status")
-      : Promise.resolve({ token_saved: mockGithubToken, pending: false, ok: mockGithubToken, error: "", login: mockGithubToken ? "octocat" : "", total: mockGithubToken ? 412 : 0 }),
+      : Promise.resolve((() => {
+          const on = mockGithubToken || mockGithubSignedIn;
+          return { token_saved: mockGithubToken, signed_in: mockGithubSignedIn, pending: false, ok: on, error: "", login: on ? "octocat" : "", total: on ? 412 : 0 };
+        })()),
+  /** Starts "Sign in with GitHub": resolves with the code to enter on GitHub. The result comes via onGh. */
+  ghSignIn: (): Promise<{ user_code: string; uri: string }> => {
+    if (TAURI) return invoke<{ user_code: string; uri: string }>("gh_sign_in");
+    setTimeout(() => {
+      mockGithubSignedIn = true;
+      subs.gh.forEach(cb => cb({ state: "done", message: "Signed in. Your contributions show within a minute." }));
+    }, 3000);
+    return Promise.resolve({ user_code: "WDJB-MJHT", uri: "https://github.com/login/device" });
+  },
+  ghSignInCancel: (): Promise<void> => (TAURI ? invoke<void>("gh_sign_in_cancel") : Promise.resolve()),
+  ghSignOut: (): Promise<void> => {
+    if (TAURI) return invoke<void>("gh_sign_out");
+    mockGithubSignedIn = false;
+    return Promise.resolve();
+  },
   calendarStatus: (): Promise<FeedStatus[]> =>
     TAURI ? invoke<FeedStatus[]>("calendar_status")
       : Promise.resolve([
@@ -453,6 +473,12 @@ export const api = {
 export async function onStatus(cb: (s: Status) => void): Promise<void> {
   if (TAURI) await listen<Status>("status", e => cb(e.payload));
   else subs.status.add(cb);
+}
+
+/** The end of a "Sign in with GitHub" (same shape as the Plex one). */
+export async function onGh(cb: (o: PlexOutcome) => void): Promise<void> {
+  if (TAURI) await listen<PlexOutcome>("gh-sign-in", e => cb(e.payload));
+  else subs.gh.add(cb);
 }
 
 /** The end of a "Sign in with Microsoft" (same shape as the Plex one). */

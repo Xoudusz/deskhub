@@ -557,6 +557,7 @@ pub fn run() {
             app.manage(updates::Updates::default());
             app.manage(plex::SignIn::default());
             app.manage(msgraph::SignIn::default());
+            app.manage(github::GhSignIn::default());
             updates::spawn_loop(handle.clone());
 
             // Forward every status change to the frontend (App is managed by now).
@@ -671,6 +672,9 @@ pub fn run() {
             remote::remote_status,
             github::github_token_set,
             github::github_status,
+            github::gh_sign_in,
+            github::gh_sign_in_cancel,
+            github::gh_sign_out,
             github::calendar_status,
             msgraph::ms_sign_in,
             msgraph::ms_sign_in_cancel,

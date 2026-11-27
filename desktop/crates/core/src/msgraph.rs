@@ -295,7 +295,7 @@ pub fn parse_token_response(status: u16, body: &[u8]) -> Result<Tokens, TokenErr
 }
 
 /// Any reply's status and body (capped), so an error reply's JSON can be read.
-async fn read_any(mut resp: reqwest::Response) -> Result<(u16, Vec<u8>)> {
+pub(crate) async fn read_any(mut resp: reqwest::Response) -> Result<(u16, Vec<u8>)> {
     let status = resp.status().as_u16();
     let mut body = Vec::new();
     while let Some(chunk) = resp.chunk().await.map_err(|e| anyhow!("reading the reply: {}", e.without_url()))? {

@@ -40,7 +40,10 @@ Commands (`invoke`):
 | `plex_select_server` | `{ id: string, name: string }` | `null`: saves `media_server.server_id` / `server_name` |
 | `plex_sign_out` | – | `null`: deletes the token and forgets the server |
 | `github_token_set` | `{ token: string }` | `null`: saves a GitHub token (`github_pat_...` or `ghp_...`) in Credential Manager ("Desk Hub" / "github-token", read back to confirm) and asks GitHub now; `""` deletes it |
-| `github_status` | – | `{ token_saved, pending, ok, error, login, total }`: the contribution collector's last answer (`pending` until it has asked) |
+| `github_status` | – | `{ token_saved, signed_in, pending, ok, error, login, total }`: the contribution collector's last answer (`pending` until it has asked); `token_saved` is the token fallback, `signed_in` the GitHub sign-in |
+| `gh_sign_in` | – | `{ user_code, uri }`: starts the device flow of the Desk Hub GitHub App (`ghauth::CLIENT_ID`), opens `uri`; polls in the background and emits `gh-sign-in` `{ state: "done" \| "error" \| "expired", message }`. Tokens go to Credential Manager ("Desk Hub" / "github-oauth", JSON) |
+| `gh_sign_in_cancel` | – | `null`: stops the waiting sign-in |
+| `gh_sign_out` | – | `null`: deletes the sign-in (a saved token is used again) |
 | `calendar_status` | – | `{ name, ok, error, events }[]`: the last read of each calendar feed and of the Outlook sign-in (error names the problem, never the link; "Sign in again" when Microsoft no longer accepts it) |
 | `ms_sign_in` | `{ clientId: string, tenant: string }` | the Microsoft sign-in address (also opened in the browser): saves `calendar.ms_client_id` / `ms_tenant`, listens once on `127.0.0.1` for the `http://localhost:<port>` redirect (auth code + PKCE, 5 min), keeps the refresh token in Credential Manager ("Desk Hub" / "ms-refresh-token") and sets `ms_signed_in`. Result as `ms-sign-in` |
 | `ms_sign_in_cancel` | – | `null`: stops waiting |
@@ -158,8 +161,11 @@ With `ms_signed_in`, it also reads Microsoft Graph `/me/calendarView` (`msgraph.
 token kept in memory, refreshed from the rotating refresh token, one retry after a 401, next pages on
 the same host only, all-day events rounded to their date) and merges those events in.
 The GitHub collector (`collectors/github.rs`, port of `companion/deskhub/github.py`) asks
-api.github.com every 15 minutes (10 after a failure, at once after `github_token_set`) and sends
-`github` when it changes. Saving a token adds `github` to `pages.enabled`.
+api.github.com every 15 minutes (10 after a failure, at once after `github_token_set` or a sign-in) and sends
+`github` when it changes. It uses the GitHub sign-in first (`ghauth.rs`: device flow, no secret;
+the 8 h access token is renewed 5 minutes before it runs out or once after a 401, the rotated pair is saved
+before use unless the user signed out or in meanwhile; a refused refresh token deletes the sign-in and
+shows "Sign in again"), else the token. Saving a token or signing in adds `github` to `pages.enabled`.
 
 The internet collector (`collectors/net.rs`, port of `companion/deskhub/netstats.py`) connects to
 1.1.1.1:443 (then 8.8.8.8:443) every 2 s and sends `net`: latency (median of 5), jitter, loss and

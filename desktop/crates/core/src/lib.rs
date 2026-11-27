@@ -4,6 +4,7 @@
 pub mod claude_install;
 pub mod collectors;
 pub mod firmware;
+pub mod ghauth;
 pub mod http;
 pub mod ics;
 pub mod msgraph;
