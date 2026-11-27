@@ -6,6 +6,7 @@ pub mod collectors;
 pub mod firmware;
 pub mod http;
 pub mod ics;
+pub mod msgraph;
 pub mod pages;
 pub mod plex;
 pub mod protocol;

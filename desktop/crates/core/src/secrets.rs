@@ -37,6 +37,8 @@ pub const PLEX_TOKEN: &str = "plex-token";
 pub const REMOTE_TOKEN: &str = "remote-claude-token";
 /// A GitHub fine-grained personal access token (contribution chart, Settings > Calendar & GitHub).
 pub const GITHUB_TOKEN: &str = "github-token";
+/// The Microsoft refresh token from "Sign in with Microsoft" (Outlook calendar). It rotates.
+pub const MS_REFRESH_TOKEN: &str = "ms-refresh-token";
 
 #[cfg(windows)]
 pub struct CredentialManager {

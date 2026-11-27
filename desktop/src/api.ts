@@ -36,7 +36,11 @@ export type Settings = {
   games: { steam: boolean; presets: boolean; presets_disabled: string[]; custom: CustomGame[] };
   media_server: MediaServer;
   sound: Sound;
-  calendar: { feeds: CalendarFeed[]; days: number };
+  calendar: {
+    feeds: CalendarFeed[]; days: number;
+    /** "Sign in with Microsoft" (Outlook work calendar): app registration and tenant. */
+    ms_client_id: string; ms_tenant: string; ms_signed_in: boolean; ms_name: string; ms_color: string;
+  };
   internet: { show_ip: boolean; speedtest_hours: number };
   imported: boolean;
 };
@@ -214,7 +218,7 @@ const mock: Settings = {
   location: { enabled: false, city: "New York", lat: "40.7128", lon: "-74.0060", tz: "EST5EDT,M3.2.0,M11.1.0", fahrenheit: true, h24: false },
   media_server: { signed_in: false, server_id: "", server_name: "", client_id: "deskhub-mock" },
   sound: { mute: false, volume: 60, alert: "chime", timer: "bell", reminder: "chime", remind_minutes: 5 },
-  calendar: { feeds: [], days: 7 },
+  calendar: { feeds: [], days: 7, ms_client_id: "", ms_tenant: "", ms_signed_in: false, ms_name: "", ms_color: "" },
   internet: { show_ip: false, speedtest_hours: 0 },
   imported: false,
 };
@@ -225,6 +229,7 @@ const subs = {
   settings: new Set<(s: Settings) => void>(),
   sim: new Set<(f: SimFrame) => void>(),
   plex: new Set<(o: PlexOutcome) => void>(),
+  ms: new Set<(o: PlexOutcome) => void>(),
 };
 
 /** One frame for the simulator, as the board would get it: JSON, or a binary frame in base64. */
@@ -394,7 +399,10 @@ export const api = {
       : Promise.resolve({ token_saved: mockGithubToken, pending: false, ok: mockGithubToken, error: "", login: mockGithubToken ? "octocat" : "", total: mockGithubToken ? 412 : 0 }),
   calendarStatus: (): Promise<FeedStatus[]> =>
     TAURI ? invoke<FeedStatus[]>("calendar_status")
-      : Promise.resolve(mock.calendar.feeds.filter(f => f.url).map((f, i) => ({ name: f.name || `Calendar ${i + 1}`, ok: true, error: "", events: 3 }))),
+      : Promise.resolve([
+        ...mock.calendar.feeds.filter(f => f.url).map((f, i) => ({ name: f.name || `Calendar ${i + 1}`, ok: true, error: "", events: 3 })),
+        ...(mock.calendar.ms_signed_in ? [{ name: mock.calendar.ms_name || "Outlook", ok: true, error: "", events: 5 }] : []),
+      ]),
   remoteStatus: (): Promise<RemoteStatus> =>
     TAURI ? invoke<RemoteStatus>("remote_status")
       : Promise.resolve({ configured: mock.ai.remote_url !== "", token_saved: mockRemoteToken, ok: mock.ai.remote_url !== "" && mockRemoteToken, error: mockRemoteToken ? "" : "no token saved for the server", host: "vibecode", sessions: 1 }),
@@ -419,6 +427,21 @@ export const api = {
     if (TAURI) return invoke<void>("plex_sign_out");
     mockMerge({ media_server: { signed_in: false, server_id: "", server_name: "" } });
   },
+  /** Saves the client id and tenant and opens Microsoft's sign-in page; resolves with its address. The result comes via onMs. */
+  msSignIn: async (clientId: string, tenant: string): Promise<string> => {
+    if (TAURI) return invoke<string>("ms_sign_in", { clientId, tenant });
+    mockMerge({ calendar: { ms_client_id: clientId, ms_tenant: tenant } });
+    setTimeout(() => {
+      mockMerge({ calendar: { ms_signed_in: true } });
+      subs.ms.forEach(cb => cb({ state: "done", message: "Signed in. Your Outlook calendar shows within a minute." }));
+    }, 2000);
+    return "https://login.microsoftonline.com/example.org/oauth2/v2.0/authorize?client_id=mock";
+  },
+  msSignInCancel: (): Promise<void> => (TAURI ? invoke<void>("ms_sign_in_cancel") : Promise.resolve()),
+  msSignOut: async (): Promise<void> => {
+    if (TAURI) return invoke<void>("ms_sign_out");
+    mockMerge({ calendar: { ms_signed_in: false } });
+  },
   importConfig: (path?: string): Promise<Settings> => {
     if (TAURI) return invoke<Settings>("import_config", { path });
     mock.imported = true;
@@ -430,6 +453,12 @@ export const api = {
 export async function onStatus(cb: (s: Status) => void): Promise<void> {
   if (TAURI) await listen<Status>("status", e => cb(e.payload));
   else subs.status.add(cb);
+}
+
+/** The end of a "Sign in with Microsoft" (same shape as the Plex one). */
+export async function onMs(cb: (o: PlexOutcome) => void): Promise<void> {
+  if (TAURI) await listen<PlexOutcome>("ms-sign-in", e => cb(e.payload));
+  else subs.ms.add(cb);
 }
 
 export async function onPlex(cb: (o: PlexOutcome) => void): Promise<void> {

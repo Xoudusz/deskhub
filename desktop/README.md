@@ -41,13 +41,17 @@ Commands (`invoke`):
 | `plex_sign_out` | – | `null`: deletes the token and forgets the server |
 | `github_token_set` | `{ token: string }` | `null`: saves a GitHub token (`github_pat_...` or `ghp_...`) in Credential Manager ("Desk Hub" / "github-token", read back to confirm) and asks GitHub now; `""` deletes it |
 | `github_status` | – | `{ token_saved, pending, ok, error, login, total }`: the contribution collector's last answer (`pending` until it has asked) |
-| `calendar_status` | – | `{ name, ok, error, events }[]`: the last read of each calendar feed (error names the problem, never the link) |
+| `calendar_status` | – | `{ name, ok, error, events }[]`: the last read of each calendar feed and of the Outlook sign-in (error names the problem, never the link; "Sign in again" when Microsoft no longer accepts it) |
+| `ms_sign_in` | `{ clientId: string, tenant: string }` | the Microsoft sign-in address (also opened in the browser): saves `calendar.ms_client_id` / `ms_tenant`, listens once on `127.0.0.1` for the `http://localhost:<port>` redirect (auth code + PKCE, 5 min), keeps the refresh token in Credential Manager ("Desk Hub" / "ms-refresh-token") and sets `ms_signed_in`. Result as `ms-sign-in` |
+| `ms_sign_in_cancel` | – | `null`: stops waiting |
+| `ms_sign_out` | – | `null`: deletes the refresh token, clears `ms_signed_in` (client id and tenant stay) |
 | `import_config` | `{ path?: string }` (default: `./config.toml`, then `%USERPROFILE%\<"", src, source\repos, Documents, Documents\GitHub, GitHub, code, dev, projects, repos>\deskhub\companion\config.toml`; the error "No config.toml found" makes the UI open a file picker) | `Settings` |
 
 Events (`listen`):
 
 - `status`: `Status`, sent on every change.
 - `settings`: `Settings`, sent after any change.
+- `ms-sign-in`: `{ state: "done" | "error" | "expired", message }`, the end of `ms_sign_in`.
 - `sim-frame`: `SimFrame`, every frame published for the board (and layout/home when settings change them).
 - `sim-resync`: frames were missed; call `sim_state` again.
 - `plex-sign-in`: `{ state: "done" | "error" | "expired", message: string }`, the end of a `plex_sign_in`.
@@ -97,6 +101,11 @@ type Settings = {
   calendar: {                    // .ics feeds for the Calendar page (collectors/calendar.rs)
     feeds: { name: string; url: string; color: string }[];  // url: https:// or webcal://; color "#RRGGBB" ("" = blue)
     days: number;                // 1-60, default 7
+    ms_client_id: string;        // "Sign in with Microsoft": Entra app registration (client) ID
+    ms_tenant: string;           // work email, domain or tenant ID (single-tenant app)
+    ms_signed_in: boolean;       // refresh token saved
+    ms_name: string;             // calendar name on the board ("" = "Outlook")
+    ms_color: string;            // "#RRGGBB" ("" = blue)
   };
   internet: {                    // the Network page (collectors/net.rs); Settings > Connection
     show_ip: boolean;            // public IP from speed.cloudflare.com/cdn-cgi/trace every 30 min
@@ -145,6 +154,9 @@ link every 10 minutes and whenever the calendar settings change (`webcal://` bec
 UNTIL applied by hand); TZIDs are IANA names or Outlook's Windows names (table in `ics.rs`),
 anything else is the PC's zone. It sends `events` (up to 16, the next `days`, window from a day
 back) only when at least one feed is set, so the Python companion's calendar isn't overwritten.
+With `ms_signed_in`, it also reads Microsoft Graph `/me/calendarView` (`msgraph.rs`: one-hour access
+token kept in memory, refreshed from the rotating refresh token, one retry after a 401, next pages on
+the same host only, all-day events rounded to their date) and merges those events in.
 The GitHub collector (`collectors/github.rs`, port of `companion/deskhub/github.py`) asks
 api.github.com every 15 minutes (10 after a failure, at once after `github_token_set`) and sends
 `github` when it changes. Saving a token adds `github` to `pages.enabled`.

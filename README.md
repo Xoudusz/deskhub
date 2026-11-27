@@ -262,10 +262,21 @@ Run these in `companion/`.
 
 **Desktop app:** open Settings > Calendar & GitHub, choose *Add calendar*, and paste the calendar's .ics link. The status line under it shows how many events it found or why it failed. The board's Calendar page fills in within a few seconds and refreshes every 10 minutes.
 
-- **Outlook**: on [outlook.office.com](https://outlook.office.com) (or outlook.live.com), open Settings > Calendar > Shared calendars, choose *Publish a calendar*, pick the calendar and *Can view all details*, select *Publish*, then copy the **ICS** link. Work accounts sometimes have publishing turned off by IT.
+- **Outlook**: on [outlook.office.com](https://outlook.office.com) (or outlook.live.com), open Settings > Calendar > Shared calendars, choose *Publish a calendar*, pick the calendar and *Can view all details*, select *Publish*, then copy the **ICS** link. Work accounts sometimes have publishing turned off by IT; then use *Sign in with Microsoft* below.
 - **Google Calendar**: the *Secret address in iCal format*, as below.
 
 The link lets anyone who has it read the calendar: Desk Hub keeps it on this PC and never writes it to a log. Apple iCloud calendars (CalDAV) still need the Python companion.
+
+**Outlook work calendar without a link (Sign in with Microsoft).** When IT has turned publishing off, the desktop app can read the calendar through Microsoft Graph instead. It needs an app registration in your organisation, which you make once with your work account:
+
+1. Sign in at [entra.microsoft.com](https://entra.microsoft.com) and open *Applications > App registrations > New registration*. Name it "Desk Hub", choose *Accounts in this organizational directory only*, and register it.
+2. Under *Authentication*, choose *Add a platform > Mobile and desktop applications*, add the redirect URI `http://localhost`, and set *Allow public client flows* to **Yes**. Save.
+3. Under *API permissions*, add *Microsoft Graph > Delegated > Calendars.Read* (User.Read is already there).
+4. Copy the *Application (client) ID* from *Overview*.
+
+In Desk Hub, Settings > Calendar & GitHub > *Outlook (work)*: paste the client ID, type your work email address (or your organisation's domain), and choose **Sign in with Microsoft**. Sign in in the browser window that opens and accept the permissions. The app only reads your calendar; the sign-in stays in Windows Credential Manager (`ms-refresh-token`), and the status line shows how many events it found. It refreshes every 10 minutes, and you can rename the calendar or change its colour.
+
+If Microsoft says the app needs an administrator's approval (*Need admin approval*, AADSTS65001 or AADSTS90094), your organisation doesn't let users approve apps themselves: ask IT to grant consent for Calendars.Read. Some organisations also block creating app registrations. When Microsoft stops accepting the sign-in (after a password change, or months without use), the status line says *Sign in again*.
 
 **Python companion:** setup offers this step. You can also run it on its own:
 

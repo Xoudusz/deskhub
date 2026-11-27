@@ -150,11 +150,29 @@ pub struct Calendar {
     pub feeds: Vec<CalendarFeed>,
     /// Days ahead the Calendar page shows (1-60).
     pub days: i64,
+    /// "Sign in with Microsoft" (msgraph.rs): the app registration's Application (client) ID.
+    pub ms_client_id: String,
+    /// The work tenant: an email address, its domain or the tenant ID.
+    pub ms_tenant: String,
+    /// Signed in (the refresh token is in Credential Manager, "ms-refresh-token").
+    pub ms_signed_in: bool,
+    /// Shown on the board under each event ("" = "Outlook").
+    pub ms_name: String,
+    /// "#RRGGBB" ("" = the default blue).
+    pub ms_color: String,
 }
 
 impl Default for Calendar {
     fn default() -> Self {
-        Self { feeds: Vec::new(), days: 7 }
+        Self {
+            feeds: Vec::new(),
+            days: 7,
+            ms_client_id: String::new(),
+            ms_tenant: String::new(),
+            ms_signed_in: false,
+            ms_name: String::new(),
+            ms_color: String::new(),
+        }
     }
 }
 

@@ -29,6 +29,8 @@ log = "0.4"
 sysinfo = "0.37"
 # Checks downloaded firmware images against firmware.json.
 sha2 = "0.10"
+# PKCE verifier and state for "Sign in with Microsoft" (msgraph.rs).
+getrandom = "0.3"
 
 # Windows-only collectors (media session, PDH GPU counters, power events, input, audio).
 [target.'cfg(windows)'.dependencies]
