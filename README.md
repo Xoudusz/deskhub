@@ -179,7 +179,7 @@ uv run deskhub-setup calendar
 | `internet` | connection checks on or off, speed test schedule and public IP (also `network`) |
 | `github` | the GitHub token, the GitHub page, and the contribution chart on Home (also `contributions`) |
 | `claude` | live limits, waiting alerts and the AI page's agent (also `ai`, `codex`) |
-| `alerts` | waiting alerts, and how long a finished session waits before it alerts |
+| `alerts` | waiting alerts, how long a finished session waits before it alerts, and the alert log (Settings > AI > Recent alerts) |
 | `flash` | builds the firmware and installs it on the board |
 | `startup` | starting the companion with Windows |
 
@@ -723,7 +723,9 @@ Run `serve` as a service (a systemd unit with `EnvironmentFile=` holding those v
 
 **Or open your SSH client instead.** If you answer in the terminal anyway, set Settings > AI > *Claude Code on a server* > **Show on PC opens**, for example `Termius.exe`. A server's alert then shows **Show on PC** instead of Allow and Deny: tapping it brings that program to the front (or starts it when it isn't running; a full path or a URL works too). The dialog in the terminal stays as it is.
 
-The relay sends only session state, project folder name, Claude's notification text, what a permission request asks for and hourly token counts per model. It speaks plain HTTP with a token, so use it only on your own network or over a VPN: anyone with the token on your network could answer a waiting permission request.
+**Why did it alert?** Settings > AI > **Recent alerts** lists what made the board alert, newest first: every hook event (Stop, a permission request, an idle notice from Claude Code, a question), on this PC or a server, and every alert shown, cleared, dismissed or answered. The full log is `alert_log.jsonl` in `.deskhub` in your home folder (newest 2000 lines); it holds no prompts or commands beyond what the alert shows.
+
+The relay sends only session state, the hook event that set it, project folder name, Claude's notification text, what a permission request asks for and hourly token counts per model. It speaks plain HTTP with a token, so use it only on your own network or over a VPN: anyone with the token on your network could answer a waiting permission request.
 
 ## Shortcuts
 

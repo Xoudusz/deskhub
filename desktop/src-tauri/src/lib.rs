@@ -670,6 +670,8 @@ pub fn run() {
             plex::plex_sign_out,
             remote::remote_token_set,
             remote::remote_status,
+            remote::alert_log,
+            remote::alert_log_open,
             github::github_token_set,
             github::github_status,
             github::gh_sign_in,

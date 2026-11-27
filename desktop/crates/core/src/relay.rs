@@ -147,6 +147,7 @@ fn sessions_body(shared: &Shared) -> Value {
                 "updated": s.updated,
                 "request": s.request,
                 "detail": s.detail,
+                "cause": s.cause,
             }),
         );
     }

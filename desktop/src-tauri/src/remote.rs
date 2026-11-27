@@ -3,6 +3,7 @@
 
 use std::sync::OnceLock;
 
+use deskhub_core::collectors::alert_log::{self, Entry};
 use deskhub_core::collectors::remote::RemoteRx;
 use deskhub_core::relay::MIN_TOKEN;
 use deskhub_core::secrets;
@@ -55,4 +56,21 @@ pub fn remote_status() -> RemoteStatus {
         host: snap.host.clone(),
         sessions: snap.sessions.len(),
     }
+}
+
+/// Settings > AI > Recent alerts: the newest entries of the alert log, newest first.
+#[tauri::command]
+pub fn alert_log(limit: usize) -> Vec<Entry> {
+    alert_log::path().map_or_else(Vec::new, |p| alert_log::recent(&p, limit.min(500)))
+}
+
+/// Opens ~/.deskhub, where alert_log.jsonl is.
+#[tauri::command]
+pub fn alert_log_open() -> Result<(), String> {
+    let p = alert_log::path().ok_or("no home folder")?;
+    if !p.exists() {
+        return Err("Nothing logged yet".into());
+    }
+    alert_log::open_folder(&p);
+    Ok(())
 }

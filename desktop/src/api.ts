@@ -12,6 +12,8 @@ export type Widget = "clock" | "claude" | "events" | "weather" | "media" | "stat
 /** Claude Code wiring: status line and hooks point at deskhub-cli; cli = the helper exists. */
 export type ClaudeState = { statusline: boolean; hooks: boolean; cli: boolean };
 /** Claude Code on a server: the deskhub-relay poller (the token stays in the credential store). */
+/** One line of the Claude alert log (~/.deskhub/alert_log.jsonl). */
+export type AlertLogEntry = { t: number; kind: string; source: string; project: string; state: string; cause: string; text: string };
 export type RemoteStatus = { configured: boolean; token_saved: boolean; ok: boolean; error: string; host: string; sessions: number };
 export type CalendarFeed = { name: string; url: string; color: string };
 export type FeedStatus = { name: string; ok: boolean; error: string; events: number };
@@ -287,6 +289,15 @@ let mockGithubToken = false;
 let mockGithubSignedIn = false;
 let mockRemoteToken = false;
 
+const mockNow = Date.now() / 1000;
+const mockAlertLog: AlertLogEntry[] = [
+  { t: mockNow - 40, kind: "shown", source: "PC", project: "garden-app", state: "idle", cause: "Stop", text: "Claude is waiting for you - Finished. Waiting for your reply" },
+  { t: mockNow - 70, kind: "event", source: "PC", project: "garden-app", state: "idle", cause: "Stop", text: "" },
+  { t: mockNow - 95, kind: "dismissed", source: "homeserver", project: "notes", state: "input", cause: "PreToolUse: AskUserQuestion", text: "Claude has a question for you" },
+  { t: mockNow - 120, kind: "event", source: "homeserver", project: "notes", state: "input", cause: "PreToolUse: AskUserQuestion", text: "Claude has a question for you" },
+  { t: mockNow - 300, kind: "event", source: "PC", project: "garden-app", state: "working", cause: "UserPromptSubmit", text: "" },
+];
+
 export const api = {
   getSettings: (): Promise<Settings> => (TAURI ? invoke<Settings>("get_settings") : Promise.resolve(clone(mock))),
   setSettings: (patch: SettingsPatch): Promise<Settings> => (TAURI ? invoke<Settings>("set_settings", { patch }) : Promise.resolve(mockMerge(patch))),
@@ -427,6 +438,10 @@ export const api = {
         ...mock.calendar.feeds.filter(f => f.url).map((f, i) => ({ name: f.name || `Calendar ${i + 1}`, ok: true, error: "", events: 3 })),
         ...(mock.calendar.ms_signed_in ? [{ name: mock.calendar.ms_name || "Outlook", ok: true, error: "", events: 5 }] : []),
       ]),
+  /** Newest alert log entries, newest first. */
+  alertLog: (limit: number): Promise<AlertLogEntry[]> =>
+    TAURI ? invoke<AlertLogEntry[]>("alert_log", { limit }) : Promise.resolve(mockAlertLog.slice(0, limit)),
+  alertLogOpen: (): Promise<void> => TAURI ? invoke<void>("alert_log_open") : Promise.resolve(),
   remoteStatus: (): Promise<RemoteStatus> =>
     TAURI ? invoke<RemoteStatus>("remote_status")
       : Promise.resolve({ configured: mock.ai.remote_url !== "", token_saved: mockRemoteToken, ok: mock.ai.remote_url !== "" && mockRemoteToken, error: mockRemoteToken ? "" : "no token saved for the server", host: "vibecode", sessions: 1 }),
