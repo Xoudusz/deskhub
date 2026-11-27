@@ -933,6 +933,10 @@ function aiHtml(): string {
     row("Token", `<input class="txt" type="password" data-k="aiRemoteToken" value="" placeholder="${r?.token_saved ? "Saved (type to replace)" : "DESKHUB_RELAY_TOKEN"}" autocomplete="off" spellcheck="false">`,
       "Kept in Windows Credential Manager"),
     ...(a.remote_url ? [remoteStatusRow()] : []),
+    row("Show on PC opens", `<input class="txt" data-k="aiRemoteOpen" value="${esc(a.remote_open)}" placeholder="Termius.exe" spellcheck="false">`,
+      a.remote_open.trim()
+        ? "A server's alert shows Show on PC: it brings this app to the front (or starts it). No Allow / Deny on the board"
+        : "Empty: Allow / Deny on the board for a server's permission requests. A program (Termius.exe), its full path or a URL"),
     ...(remoteNote ? [text(remoteNote)] : []),
   ].join(""));
   const alerts = card("Alerts", "Shows on the board when Claude Code waits for you", [
@@ -1478,6 +1482,7 @@ main.addEventListener("change", e => {
       else render(true);
       return;
     }
+    case "aiRemoteOpen": void save({ ai: { remote_open: t.value.trim() } }); return;
     case "aiRemoteToken":
       void api.remoteTokenSet(t.value)
         .then(() => { remoteNote = ""; t.value = ""; return api.remoteStatus(); })

@@ -214,6 +214,10 @@ pub struct Ai {
     /// Claude Code on a server: its deskhub-relay, e.g. "http://192.168.68.107:8791"
     /// ("" = none). The token is in the credential store (secrets::REMOTE_TOKEN).
     pub remote_url: String,
+    /// A server's alert on the board: what "Show on PC" brings up here instead of Allow /
+    /// Deny, e.g. "Termius.exe" (focused when running, else opened), a full path or a URL.
+    /// "" = Allow / Deny on the board for permission requests.
+    pub remote_open: String,
 }
 
 impl Default for Ai {
@@ -224,6 +228,7 @@ impl Default for Ai {
             alerts: true,
             idle_alert_seconds: 30,
             remote_url: String::new(),
+            remote_open: String::new(),
         }
     }
 }
