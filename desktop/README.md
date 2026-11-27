@@ -80,6 +80,7 @@ type Settings = {
     alerts: boolean;             // "Claude is waiting" alerts, default true
     idle_alert_seconds: number;  // default 30
     remote_url: string;          // deskhub-relay of a server ("" = off); its token: remote_token_set (credential store "remote-claude-token")
+    remote_open: string;         // a server's alert: "Show on PC" focuses this program (e.g. "Termius.exe") or opens it / a path / URL; "" = Allow / Deny on the board
   };
   tiles: {                       // Shortcuts page, max 16; default = config.example.toml tiles
     label: string; icon: string; color: string;   // icon: a board icon name, color "#rrggbb"
