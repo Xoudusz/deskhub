@@ -68,9 +68,22 @@ static uint32_t get_color(const cJSON *obj, const char *key, uint32_t fallback)
 
 // ---- message handlers ------------------------------------------------------
 
+// A chart array: numbers, anything else (or < 0) is a gap. Returns the count (at most max).
+static int get_hist(const cJSON *m, const char *key, int16_t *out, int max)
+{
+    int n = 0;
+    const cJSON *it;
+    cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(m, key)) {
+        if (n >= max) break;
+        out[n++] = cJSON_IsNumber(it) && it->valueint >= 0 ? (int16_t)it->valueint : -1;
+    }
+    return n;
+}
+
 static void on_stats(const cJSON *m)
 {
-    hub_stats_t s = {0};
+    static hub_stats_t s;   // static: the history arrays are too big for the stack
+    memset(&s, 0, sizeof(s));
     s.cpu = get_num(m, "cpu", 0);
     s.cpu_temp = get_num(m, "cpu_temp", -1);
     s.ram_used = get_num(m, "ram_used", 0);
@@ -85,6 +98,10 @@ static void on_stats(const cJSON *m)
     s.disk = get_num(m, "disk", 0);
     copy_str(s.cpu_name, sizeof(s.cpu_name), m, "cpu_name");
     copy_str(s.gpu_name, sizeof(s.gpu_name), m, "gpu_name");
+    s.hist_count = get_hist(m, "cpu_hist", s.cpu_hist, HUB_HIST);
+    for (int i = 0; i < HUB_HIST; i++) s.gpu_hist[i] = -1;
+    get_hist(m, "gpu_hist", s.gpu_hist, s.hist_count);
+    copy_str(s.hist_label, sizeof(s.hist_label), m, "hist_label");
     display_lock();
     ui_set_stats(&s);
     display_unlock();
@@ -463,11 +480,8 @@ static void on_net(const cJSON *m)
     n.latency_ms = (float)get_num(m, "latency_ms", -1);
     n.jitter_ms = (float)get_num(m, "jitter_ms", 0);
     n.loss_pct = (int)get_num(m, "loss_pct", 0);
-    const cJSON *it;
-    cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(m, "hist")) {
-        if (n.hist_count >= HUB_NET_HIST) break;
-        n.hist[n.hist_count++] = cJSON_IsNumber(it) ? (int16_t)it->valueint : -1;
-    }
+    n.hist_count = get_hist(m, "hist", n.hist, HUB_NET_HIST);
+    copy_str(n.hist_label, sizeof(n.hist_label), m, "hist_label");
     n.up_since = (time_t)get_num(m, "up_since", 0);
     const cJSON *drop = cJSON_GetObjectItemCaseSensitive(m, "last_drop");
     n.drop_at = (time_t)get_num(drop, "at", 0);

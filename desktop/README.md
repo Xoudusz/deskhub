@@ -69,6 +69,7 @@ type Settings = {
     night_style: "off" | "clock" | "dim";
     pc_sleep: "off" | "clock" | "none";
     clock_seconds: boolean;      // Home clock shows seconds (layout key "seconds")
+    chart_hours: number;         // Stats + Internet chart length: 1, 24 (default) or 168 hours (history.rs)
   };
   pages: { enabled: string[]; nav: "left" | "right" | "bottom" };   // order = navigation order
   home: {
@@ -173,7 +174,10 @@ The internet collector (`collectors/net.rs`, port of `companion/deskhub/netstats
 history over 60 probes, uptime and the last drop, data used today and this month (all
 interfaces, kept in `~/.deskhub/net_usage.json`, the companion's file), the last speed test
 (speed.cloudflare.com: 25 MB down, 10 MB up; on the board's `speedtest`, at most one per 2 min,
-or every `speedtest_hours`) and, when `show_ip`, the public IP.
+or every `speedtest_hours`) and, when `show_ip`, the public IP. Its `hist` is the saved chart
+(`history.rs`: one value per minute for cpu, gpu and ping, 7 days in `~/.deskhub/chart_history.json`,
+saved every 5 min; at most 144 points for `display.chart_hours`, -1 = gap, plus `hist_label`); `stats`
+carries `cpu_hist` / `gpu_hist` the same way, so every message restores the whole chart on the board.
 
 Text for the board goes through `text::board_text` (every collector's `ascii_fold` calls it):
 the board's Inter fonts have ASCII, Latin-1 (ä ö ü ß é …) and some punctuation (€ “ ” „ – —

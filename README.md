@@ -53,7 +53,7 @@ The pictures come from the board's own UI running in the simulator with made-up 
 | Page | What it shows | Where the data comes from |
 | --- | --- | --- |
 | Home | Clock, date, Claude limits, next events, weather, now playing, CPU/GPU/RAM | everything below |
-| PC stats | CPU, GPU, RAM and VRAM gauges, GPU temperature, a one-minute history chart, network and disk | desktop app |
+| PC stats | CPU, GPU, RAM and VRAM gauges, GPU temperature, a CPU/GPU history chart (last 24 hours, or 1 hour / 7 days), network and disk | desktop app |
 | AI | Claude Code or Codex 5-hour and weekly limits with reset times, tokens today, a 7-day chart, usage per model | desktop app, from Claude Code or Codex |
 | Calendar | Up to 16 upcoming events, grouped by day, from the next 7 days or as many as you set | desktop app (Settings > Calendar & GitHub: Outlook, Google or any .ics link) or the companion (also Apple iCloud CalDAV) |
 | Weather | Current conditions, the next 24 hours and 6 days | the board itself, from [Open-Meteo](https://open-meteo.com) with the GeoSphere Austria model (ECMWF where it doesn't reach) |
@@ -62,7 +62,7 @@ The pictures come from the board's own UI running in the simulator with made-up 
 | Shortcuts | Up to 16 buttons: key combos, apps, folders, URLs, volume, media, lock PC | desktop app |
 | 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion only, over the local network (Bambu also through its cloud) |
 | Games | The Steam game you're playing with its cover and session time, your five most recent games, and a tap to launch one (optional) | desktop app, from Steam's local files |
-| Stats: Internet view | Online status, latency, jitter and packet loss with a one-minute chart, uptime and the last drop, data used today and this month, and an on-demand speed test | desktop app (Settings > Connection > Internet) |
+| Stats: Internet view | Online status, latency, jitter and packet loss with a latency chart (last 24 hours by default), uptime and the last drop, data used today and this month, and an on-demand speed test | desktop app (Settings > Connection > Internet) |
 | Timer | Countdown with presets from 1 to 45 minutes, pause and reset, and a full-screen "Time's up" card. The time left shows on its sidebar tab | the board itself, works without the PC |
 | GitHub | Your contribution chart for the whole year with month and weekday labels, contributions by kind, your current and longest streak and best day, this week against last week day by day, and your top repositories by commits; plus a Home widget (optional) | desktop app (Settings > Calendar & GitHub), from GitHub's API with your token |
 
@@ -428,6 +428,7 @@ The Stats page has two views, switched with **PC | Internet** at the top. The In
 
 - **Status, latency, jitter and loss.** The companion probes every 2 seconds and keeps the last 60 samples for the chart. Latency is the median of the last five; jitter is how much it varies between probes; loss is the share of failed probes. The latency is a TCP connect to `1.1.1.1:443` (falling back to `8.8.8.8:443`), not an ICMP ping, so it needs no special rights and can read a few milliseconds higher than `ping`. You count as online while at least one of the last three probes succeeded.
 - **Uptime and the last drop.** How long the connection has been up, and when it last went down and for how long.
+- **Charts that survive restarts.** The PC stats chart and the latency chart show the last 24 hours (one point per 10 minutes); Settings > Display > *Chart history* switches to the last hour or the last 7 days. The desktop app keeps one value per minute for 7 days in `~/.deskhub/chart_history.json`, so the charts come back after the PC, the app or the board restarts. Time the PC was off shows as a gap.
 - **Data used** today and this month, counted from your network adapters (all traffic on this PC, not only the internet). Totals are kept in `~/.deskhub/net_usage.json`.
 - **Speed test.** Tap the button on the page to test download, upload and ping against `speed.cloudflare.com`. A test moves about 35 MB (25 MB down, 10 MB up), so it only runs when you tap it, or on a schedule if you set `speedtest_hours`. The last result is kept across restarts.
 - **Public IP** is off by default. With `show_ip = true` it is asked from `speed.cloudflare.com` every 30 minutes and shown on the page.

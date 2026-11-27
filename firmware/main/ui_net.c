@@ -19,7 +19,7 @@
 hub_net_t g_net;
 
 static lv_obj_t *s_lat, *s_lat_sub, *s_status, *s_drop, *s_today, *s_month;
-static lv_obj_t *s_chart, *s_chart_max, *s_offline;
+static lv_obj_t *s_chart, *s_chart_max, *s_chart_cap, *s_offline;
 static lv_chart_series_t *s_ser;
 static lv_obj_t *s_down, *s_upl, *s_sp_sub, *s_now, *s_run, *s_run_lbl;
 
@@ -107,8 +107,8 @@ void net_page_create(lv_obj_t *page)
     lv_obj_t *ch = ui_card(page);
     lv_obj_set_size(ch, CONTENT_W, CHART_H);
     lv_obj_set_pos(ch, 0, TOP_H + 12);
-    cap = ui_caption(ch, "LATENCY, LAST 2 MINUTES");
-    lv_obj_set_pos(cap, 0, 0);
+    s_chart_cap = ui_caption(ch, "LATENCY, LAST 2 MINUTES");
+    lv_obj_set_pos(s_chart_cap, 0, 0);
     s_chart_max = ui_label(ch, g_font_14, COL_DIM, "");
     lv_obj_align(s_chart_max, LV_ALIGN_TOP_RIGHT, 0, 0);
     s_chart = lv_chart_create(ch);
@@ -228,8 +228,14 @@ void net_refresh(void)
     int peak = 50;
     for (int i = 0; i < n->hist_count; i++) if (n->hist[i] > peak) peak = n->hist[i];
     lv_chart_set_range(s_chart, LV_CHART_AXIS_PRIMARY_Y, 0, peak);
-    for (int i = 0; i < HUB_NET_HIST; i++) {
-        int j = i - (HUB_NET_HIST - n->hist_count);
+    // The app's saved history (hist_label set) or an older app's last 2 minutes.
+    char cap[48];
+    snprintf(cap, sizeof(cap), "LATENCY, %.23s", n->hist_label[0] ? n->hist_label : "LAST 2 MINUTES");
+    lv_label_set_text(s_chart_cap, cap);
+    int points = n->hist_count > 0 ? n->hist_count : HUB_NET_HIST;
+    if ((int)lv_chart_get_point_count(s_chart) != points) lv_chart_set_point_count(s_chart, points);
+    for (int i = 0; i < points; i++) {
+        int j = i - (points - n->hist_count);
         int v = j >= 0 && n->hist[j] >= 0 ? n->hist[j] : LV_CHART_POINT_NONE;
         lv_chart_set_value_by_id(s_chart, s_ser, i, v);
     }

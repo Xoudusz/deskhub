@@ -393,6 +393,8 @@ pub struct Display {
     pub pc_sleep: PcSleep,
     /// The Home clock shows seconds.
     pub clock_seconds: bool,
+    /// How far back the Stats and Internet charts reach: 1, 24 or 168 hours (history.rs).
+    pub chart_hours: u32,
 }
 
 impl Default for Display {
@@ -404,6 +406,7 @@ impl Default for Display {
             night_style: NightStyle::Off,
             pc_sleep: PcSleep::Off,
             clock_seconds: false,
+            chart_hours: crate::history::DEFAULT_HOURS,
         }
     }
 }

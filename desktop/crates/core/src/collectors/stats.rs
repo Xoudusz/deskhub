@@ -9,12 +9,13 @@ use serde_json::{json, Value};
 use sysinfo::{Disks, Networks, System};
 
 use super::Ctx;
+use crate::history;
 
 const GIB: f64 = 1_073_741_824.0;
 const KIB: f64 = 1024.0;
 
 pub async fn run(ctx: Ctx) {
-    let out = ctx.out;
+    let Ctx { out, settings, .. } = ctx;
     let mut sys = System::new_all();
     sys.refresh_cpu_usage();
     let cpu_name = cpu_name_clean(sys.cpus().first().map(|c| c.brand()).unwrap_or(""));
@@ -62,7 +63,18 @@ pub async fn run(ctx: Ctx) {
             gpu_name: g.name,
             gpu: g.fields,
         };
-        out.publish("stats", build_stats_json(&sample));
+        // The chart history (history.rs): every message carries the whole chart, so the board
+        // gets it back after its own restart too.
+        history::record("cpu", Some(sample.cpu));
+        if let Some(g) = &sample.gpu {
+            history::record("gpu", Some(g.util));
+        }
+        let hours = settings.borrow().display.chart_hours;
+        let mut msg = build_stats_json(&sample);
+        msg["cpu_hist"] = json!(history::chart("cpu", hours));
+        msg["gpu_hist"] = json!(history::chart("gpu", hours));
+        msg["hist_label"] = json!(history::label(hours));
+        out.publish("stats", msg);
     }
 }
 

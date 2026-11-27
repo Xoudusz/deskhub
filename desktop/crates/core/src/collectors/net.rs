@@ -164,6 +164,14 @@ async fn tcp_probe() -> Option<f64> {
     None
 }
 
+/// The board's message: the chart is the saved history (history.rs), not the 2-minute window.
+fn board_message(st: &NetState, s: &crate::settings::Settings) -> Value {
+    let mut m = st.message(s.internet.show_ip);
+    m["hist"] = json!(crate::history::chart("ping", s.display.chart_hours));
+    m["hist_label"] = json!(crate::history::label(s.display.chart_hours));
+    m
+}
+
 fn state_file() -> Option<PathBuf> {
     let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     std::env::var_os(var).filter(|v| !v.is_empty()).map(|h| PathBuf::from(h).join(".deskhub").join("net_usage.json"))
@@ -182,7 +190,11 @@ fn save(s: &NetState) {
     if let Some(dir) = p.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    if let Err(e) = std::fs::write(&p, s.saved().to_string()) {
+    // Temp file + rename: a crash never leaves half a file.
+    let tmp = p.with_extension("json.tmp");
+    let res = std::fs::write(&tmp, s.saved().to_string()).and_then(|()| std::fs::rename(&tmp, &p));
+    if let Err(e) = res {
+        let _ = std::fs::remove_file(&tmp);
         log::debug!("net usage save failed: {e}");
     }
 }
@@ -247,6 +259,7 @@ pub async fn run(mut ctx: Ctx) {
                 let bytes: u64 = nets.list().values().map(|n| n.received() + n.transmitted()).sum();
                 let now = chrono::Utc::now().timestamp();
                 st.probe(now, ms);
+                crate::history::record("ping", ms);
                 if st.usage(now, bytes) {
                     save(&st);
                 }
@@ -259,7 +272,7 @@ pub async fn run(mut ctx: Ctx) {
                     let tx = tx.clone();
                     tokio::spawn(async move { let _ = tx.send(Done::Ip(public_ip().await)).await; });
                 }
-                ctx.out.publish("net", st.message(show_ip));
+                ctx.out.publish("net", board_message(&st, &ctx.settings.borrow()));
                 hours > 0.0 && auto_at.elapsed() >= Duration::from_secs_f64(hours * 3600.0)
             }
             msg = ctx.incoming.recv() => match msg {
@@ -278,8 +291,7 @@ pub async fn run(mut ctx: Ctx) {
                     }
                     Done::Ip(ip) => if let Some(ip) = ip { st.ip = ip },
                 }
-                let show_ip = ctx.settings.borrow().internet.show_ip;
-                ctx.out.publish("net", st.message(show_ip));
+                ctx.out.publish("net", board_message(&st, &ctx.settings.borrow()));
                 false
             }
         };
@@ -287,7 +299,7 @@ pub async fn run(mut ctx: Ctx) {
             last_test = Some(Instant::now());
             auto_at = Instant::now();
             st.testing = true;
-            ctx.out.publish("net", st.message(ctx.settings.borrow().internet.show_ip));
+            ctx.out.publish("net", board_message(&st, &ctx.settings.borrow()));
             let tx = tx.clone();
             tokio::spawn(async move {
                 let result = match speedtest().await {

@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <time.h>
 
+// Chart history from the app (history.rs): at most this many points, oldest first, -1 = gap.
+#define HUB_HIST 144
+
 typedef struct {
     float cpu;          // %
     float cpu_temp;     // °C, < 0 when unknown
@@ -21,6 +24,11 @@ typedef struct {
     float disk;         // % used of the system drive
     char cpu_name[48];
     char gpu_name[48];
+    // Saved history (app 0.14+); hist_count 0 = an older app, the chart then adds one point per message.
+    int16_t cpu_hist[HUB_HIST];
+    int16_t gpu_hist[HUB_HIST];
+    int hist_count;
+    char hist_label[24];    // "LAST 24 HOURS"
 } hub_stats_t;
 
 typedef struct {
@@ -198,15 +206,16 @@ typedef struct {
 } hub_github_t;
 
 // Internet connection: latency, outages, data used and the last speed test.
-#define HUB_NET_HIST 60
+#define HUB_NET_HIST HUB_HIST
 typedef struct {
     bool valid;
     bool online;
     float latency_ms;        // < 0: unknown
     float jitter_ms;
     int loss_pct;
-    int16_t hist[HUB_NET_HIST];   // latency per probe, oldest first; -1 = lost
+    int16_t hist[HUB_NET_HIST];   // latency, oldest first; -1 = lost or no data
     int hist_count;
+    char hist_label[24];     // "LAST 24 HOURS"; "" = an older app (last 2 minutes)
     time_t up_since;
     time_t drop_at;          // last outage (0 = none seen)
     int drop_dur_s;

@@ -240,7 +240,11 @@ function displayHtml(): string {
   const nightOn = d.night !== "";
   const [from, to] = nightOn ? d.night.split("-") : ["22:00", "07:00"];
   const brightness = card("Brightness", "", slider("brightness", "Brightness", 1, 100, d.brightness));
-  const clock = card("Clock", "", row("Show seconds", tgl(`data-k="clockSeconds"`, d.clock_seconds), "Home clock on the board"));
+  const clock = card("Clock and charts", "", [
+    row("Show seconds", tgl(`data-k="clockSeconds"`, d.clock_seconds), "Home clock on the board"),
+    row("Chart history", select(`data-k="chartHours"`, [["1", "Last hour"], ["24", "Last 24 hours"], ["168", "Last 7 days"]], String(d.chart_hours)),
+      "Stats and Internet charts on the board. Saved on this PC, so they survive restarts"),
+  ].join(""));
   const night = card("Night", "Dims the board after dark", [
     row(`${icon("moon", 14)}Night mode`, tgl(`data-k="nightOn"`, nightOn)),
     ...(nightOn
@@ -1495,6 +1499,9 @@ main.addEventListener("change", e => {
     case "locF": saveLocation({ fahrenheit: on }); return;
     case "clockSeconds":
       void save({ display: { clock_seconds: on } });
+      return;
+    case "chartHours":
+      void save({ display: { chart_hours: Number(t.value) } });
       return;
     case "aiAgent":
       void save({ ai: { agent: t.value as Settings["ai"]["agent"] } });
