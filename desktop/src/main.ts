@@ -6,7 +6,7 @@ import "./styles.css";
 import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
-  api, win, TAURI, onStatus, onSettings, onPlex, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
+  api, win, TAURI, onStatus, onSettings, onPlex, onMs, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
   type Tile, type TileAction, type SoundName, type CalendarFeed, type FeedStatus, type GithubStatus, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
@@ -267,6 +267,9 @@ function displayHtml(): string {
 let feedStatus: FeedStatus[] = [];
 let gh: GithubStatus | null = null;
 let ghNote = "";
+/** "Sign in with Microsoft": the page address while waiting, and the last message. */
+let msUrl = "";
+let msNote = "";
 
 function feedStatusText(i: number): string {
   const f = S.calendar.feeds[i];
@@ -291,7 +294,7 @@ function calendarHtml(): string {
     ...feeds,
     row("", `<button type="button" data-act="cal-add">${icon("plus", 13)}Add calendar</button>`),
     row("Days ahead", `<input class="num" type="number" min="1" max="60" data-k="calDays" value="${c.days}">`),
-    text("Outlook: outlook.office.com > Settings > Calendar > Shared calendars > Publish a calendar, then copy the ICS link. Google: Calendar settings > Secret address in iCal format."),
+    text("Outlook: outlook.office.com > Settings > Calendar > Shared calendars > Publish a calendar, then copy the ICS link (no Publish option? Use Sign in with Microsoft below). Google: Calendar settings > Secret address in iCal format."),
     text("The link lets anyone read the calendar: it stays on this PC and is never logged."),
   ].join(""));
   const g = gh;
@@ -306,7 +309,52 @@ function calendarHtml(): string {
     ghState,
     ...(ghNote ? [text(ghNote)] : []),
   ].join(""));
-  return cal + github;
+  return cal + outlookHtml() + github;
+}
+
+/** Outlook (work) via "Sign in with Microsoft", for calendars that can't be published. */
+function outlookHtml(): string {
+  const c = S.calendar;
+  const name = c.ms_name.trim() || "Outlook";
+  const st = feedStatus.find(s => s.name === name);
+  const status = !st ? "Reading the calendar"
+    : st.ok ? `${icon("check", 12)}${st.events === 1 ? "1 event" : `${st.events} events`} in the next ${c.days} days`
+    : `${icon("x", 12)}${esc(st.error)}`;
+  const setup = [
+    row("Application (client) ID", `<input class="txt" data-k="msClient" value="${esc(c.ms_client_id)}" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false">`,
+      "From your app registration in entra.microsoft.com (see README, Calendars)"),
+    row("Work email or domain", `<input class="txt" data-k="msTenant" value="${esc(c.ms_tenant)}" placeholder="you@company.com" spellcheck="false">`),
+  ];
+  const rows = c.ms_signed_in
+    ? [
+        row(`<input class="txt" data-k="msName" value="${esc(c.ms_name)}" placeholder="Outlook" spellcheck="false">`,
+          `<input type="color" data-k="msColor" value="${esc(c.ms_color || "#7c9cff")}" title="Color on the board">` +
+            `<button type="button" data-act="ms-sign-out">${icon("x", 13)}Sign out</button>`, status),
+      ]
+    : msUrl
+      ? [
+          ...setup,
+          row("Waiting for Microsoft", `<button type="button" data-act="ms-cancel">${icon("x", 13)}Cancel</button>`,
+            "Sign in with your work account in the browser window that opened. No window? Open this address:"),
+          `<div class="swr"><input class="txt" readonly value="${esc(msUrl)}" spellcheck="false" style="width:100%"></div>`,
+        ]
+      : [
+          ...setup,
+          row("", `<button type="button" data-act="ms-sign-in">${icon("zap", 13)}Sign in with Microsoft</button>`,
+            "Reads your calendar only. The sign-in stays in Windows Credential Manager"),
+        ];
+  return card("Outlook (work)", "For a work calendar that can't be published as a link", [...rows, ...(msNote ? [text(esc(msNote))] : [])].join(""));
+}
+
+async function msSignIn() {
+  msNote = "";
+  const val = (k: string) => (document.querySelector<HTMLInputElement>(`[data-k="${k}"]`)?.value ?? "").trim();
+  try {
+    msUrl = await api.msSignIn(val("msClient"), val("msTenant"));
+  } catch (err) {
+    msNote = String(err);
+  }
+  render(true);
 }
 
 function saveFeeds(feeds: CalendarFeed[]) {
@@ -1214,6 +1262,9 @@ async function act(el: HTMLElement) {
     case "eye": showToken = !showToken; render(true); return;
     case "claude": await toggleClaude(); return;
     case "plex-sign-in": await plexSignIn(); return;
+    case "ms-sign-in": await msSignIn(); return;
+    case "ms-cancel": msUrl = ""; await api.msSignInCancel(); render(true); return;
+    case "ms-sign-out": msNote = ""; await api.msSignOut(); render(true); return;
     case "plex-cancel": plexUrl = ""; await api.plexSignInCancel(); render(true); return;
     case "plex-sign-out":
       plexServers = null; plexNote = "";
@@ -1410,6 +1461,10 @@ main.addEventListener("change", e => {
       void save({ internet: { speedtest_hours: v } });
       return;
     }
+    case "msClient": void save({ calendar: { ms_client_id: t.value.trim() } }); return;
+    case "msTenant": void save({ calendar: { ms_tenant: t.value.trim() } }); return;
+    case "msName": void save({ calendar: { ms_name: t.value.trim() } }); return;
+    case "msColor": void save({ calendar: { ms_color: t.value } }); return;
     case "calDays": {
       const v = Math.max(1, Math.min(60, Math.round(Number(t.value) || 7)));
       void save({ calendar: { days: v } });
@@ -1521,6 +1576,11 @@ async function boot() {
     if (section === "status") render(true);
   });
   watchServer();
+  await onMs(o => {
+    msUrl = "";
+    msNote = o.message;
+    if (section === "calendar") render(true);
+  });
   await onPlex(o => {
     plexUrl = "";
     plexNote = o.state === "done" ? "" : o.message;

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 mod github;
+mod msgraph;
 mod plex;
 mod remote;
 mod updates;
@@ -555,6 +556,7 @@ pub fn run() {
             });
             app.manage(updates::Updates::default());
             app.manage(plex::SignIn::default());
+            app.manage(msgraph::SignIn::default());
             updates::spawn_loop(handle.clone());
 
             // Forward every status change to the frontend (App is managed by now).
@@ -669,7 +671,10 @@ pub fn run() {
             remote::remote_status,
             github::github_token_set,
             github::github_status,
-            github::calendar_status
+            github::calendar_status,
+            msgraph::ms_sign_in,
+            msgraph::ms_sign_in_cancel,
+            msgraph::ms_sign_out
         ])
         .build(tauri::generate_context!())
         .expect("error while building Desk Hub")

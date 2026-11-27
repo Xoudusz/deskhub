@@ -44,8 +44,8 @@ fn token() -> Result<String, String> {
         .ok_or_else(|| "Not signed in to Plex".to_string())
 }
 
-/// Opens `url` in the default browser.
-fn open_browser(url: &str) {
+/// Opens `url` in the default browser (also used by msgraph.rs).
+pub(crate) fn open_browser(url: &str) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
