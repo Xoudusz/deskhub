@@ -6,7 +6,7 @@ import "./styles.css";
 import "./settings.css";
 import { fillIcons, icon } from "./icons";
 import {
-  api, win, TAURI, onStatus, onSettings, onPlex, onMs, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
+  api, win, TAURI, onStatus, onSettings, onPlex, onMs, onGh, appVersion, ALL_PAGES, PAGE_LABELS, WIDGETS, WIDGET_LABELS, HOME_SIZES, GRID_COLS, GRID_ROWS,
   type Page, type Settings, type SettingsPatch, type Status, type Widget, type ClaudeState, type RemoteStatus, type HomePreset, BUILTIN_PRESETS,
   type Tile, type TileAction, type SoundName, type CalendarFeed, type FeedStatus, type GithubStatus, type CustomGame, type FirmwareCheck, type PlexServer, type SimFrame, type UsbBoard, type UsbNetwork, type Location, MAX_TILES, TILE_ICONS, TILE_ACTIONS, GAME_PRESETS, EXAMPLE_TILES,
 } from "./api";
@@ -267,6 +267,8 @@ function displayHtml(): string {
 let feedStatus: FeedStatus[] = [];
 let gh: GithubStatus | null = null;
 let ghNote = "";
+/** "Sign in with GitHub": the code to enter while waiting. */
+let ghCode: { user_code: string; uri: string } | null = null;
 /** "Sign in with Microsoft": the page address while waiting, and the last message. */
 let msUrl = "";
 let msNote = "";
@@ -299,14 +301,24 @@ function calendarHtml(): string {
   ].join(""));
   const g = gh;
   const ghState = !g ? row("Status", "", "Checking")
-    : !g.token_saved ? row(`${icon("x", 14)}No token`, "", "Paste a token to show your contributions")
+    : !g.token_saved && !g.signed_in ? row(`${icon("x", 14)}Not connected`, "", g.error ? esc(g.error) : "Sign in to show your contributions")
     : g.pending ? row("Status", "", "Asking GitHub")
     : g.ok ? row(`${icon("check", 14)}Connected`, "", esc(`${g.login} - ${g.total} contributions in the last year`))
     : row(`${icon("x", 14)}GitHub didn't answer`, "", esc(g.error));
+  const signIn = ghCode
+    ? row(`<span style="font:600 22px/1.2 ui-monospace,monospace;letter-spacing:2px">${esc(ghCode.user_code)}</span>`,
+        `<button type="button" data-act="gh-copy">${icon("copy", 13)}Copy code</button>` +
+          `<button type="button" data-act="gh-cancel">${icon("x", 13)}Cancel</button>`,
+        `Enter this code on ${esc(ghCode.uri)} (it opened in your browser), then Authorize`)
+    : g?.signed_in
+      ? row("Signed in with GitHub", `<button type="button" data-act="gh-sign-out">${icon("x", 13)}Sign out</button>`)
+      : row("", `<button type="button" data-act="gh-sign-in">${icon("zap", 13)}Sign in with GitHub</button>`,
+          "Read-only. The sign-in stays in Windows Credential Manager");
   const github = card("GitHub", "Your contribution chart on the board's GitHub page", [
-    row("Token", `<input class="txt" type="password" data-k="ghToken" value="" placeholder="${g?.token_saved ? "Saved (type to replace, empty to remove)" : "github_pat_..."}" autocomplete="off" spellcheck="false">`,
-      "github.com/settings/personal-access-tokens: a fine-grained token, no permissions needed. Kept in Windows Credential Manager"),
+    signIn,
     ghState,
+    row("Or use a token", `<input class="txt" type="password" data-k="ghToken" value="" placeholder="${g?.token_saved ? "Saved (type to replace, empty to remove)" : "github_pat_..."}" autocomplete="off" spellcheck="false">`,
+      "github.com/settings/personal-access-tokens: a fine-grained token, no permissions needed. Used when not signed in"),
     ...(ghNote ? [text(ghNote)] : []),
   ].join(""));
   return cal + outlookHtml() + github;
@@ -344,6 +356,16 @@ function outlookHtml(): string {
             "Reads your calendar only. The sign-in stays in Windows Credential Manager"),
         ];
   return card("Outlook (work)", "For a work calendar that can't be published as a link", [...rows, ...(msNote ? [text(esc(msNote))] : [])].join(""));
+}
+
+async function ghSignIn() {
+  ghNote = "";
+  try {
+    ghCode = await api.ghSignIn();
+  } catch (err) {
+    ghNote = String(err);
+  }
+  render(true);
 }
 
 async function msSignIn() {
@@ -1263,6 +1285,19 @@ async function act(el: HTMLElement) {
     case "claude": await toggleClaude(); return;
     case "plex-sign-in": await plexSignIn(); return;
     case "ms-sign-in": await msSignIn(); return;
+    case "gh-sign-in": await ghSignIn(); return;
+    case "gh-copy": if (ghCode) void navigator.clipboard.writeText(ghCode.user_code).catch(() => {}); return;
+    case "gh-cancel": ghCode = null; await api.ghSignInCancel(); render(true); return;
+    case "gh-sign-out":
+      ghNote = "";
+      try {
+        await api.ghSignOut();
+        gh = await api.githubStatus();
+      } catch (err) {
+        ghNote = String(err);
+      }
+      render(true);
+      return;
     case "ms-cancel": msUrl = ""; await api.msSignInCancel(); render(true); return;
     case "ms-sign-out": msNote = ""; await api.msSignOut(); render(true); return;
     case "plex-cancel": plexUrl = ""; await api.plexSignInCancel(); render(true); return;
@@ -1576,6 +1611,13 @@ async function boot() {
     if (section === "status") render(true);
   });
   watchServer();
+  await onGh(o => {
+    ghCode = null;
+    ghNote = o.state === "done" ? "" : o.message;
+    // A sign-in shows the GitHub page on the board.
+    if (o.state === "done" && !S.pages.enabled.includes("github")) void save({ pages: { enabled: [...S.pages.enabled, "github"] } });
+    void api.githubStatus().then(s => { gh = s; }).finally(() => { if (section === "calendar") render(true); });
+  });
   await onMs(o => {
     msUrl = "";
     msNote = o.message;

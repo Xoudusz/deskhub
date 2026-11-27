@@ -39,6 +39,8 @@ pub const REMOTE_TOKEN: &str = "remote-claude-token";
 pub const GITHUB_TOKEN: &str = "github-token";
 /// The Microsoft refresh token from "Sign in with Microsoft" (Outlook calendar). It rotates.
 pub const MS_REFRESH_TOKEN: &str = "ms-refresh-token";
+/// The "Sign in with GitHub" tokens (ghauth::Tokens as JSON). The refresh token rotates.
+pub const GITHUB_OAUTH: &str = "github-oauth";
 
 #[cfg(windows)]
 pub struct CredentialManager {

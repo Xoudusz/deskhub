@@ -1,9 +1,11 @@
 //! GitHub contribution chart (the green squares of your profile) for the GitHub page and
 //! Home widget, as the "github" message (port of companion/deskhub/github.py).
 //!
-//! Needs a fine-grained personal access token (no extra permissions), kept in the
-//! credential store (secrets::GITHUB_TOKEN). Requests go only to api.github.com.
+//! Uses "Sign in with GitHub" (crate::ghauth, tokens in secrets::GITHUB_OAUTH, renewed
+//! here before they run out) or else a fine-grained personal access token
+//! (secrets::GITHUB_TOKEN). Requests go only to api.github.com and github.com.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -15,6 +17,7 @@ use tokio::sync::Notify;
 
 use super::media::ascii_fold;
 use super::Ctx;
+use crate::ghauth::{self, RefreshError, Tokens};
 use crate::secrets;
 
 const API: &str = "https://api.github.com/graphql";
@@ -220,7 +223,7 @@ async fn post(client: &reqwest::Client, token: &str, query: &str, vars: Value) -
         .await
         .map_err(crate::plex::send_err)?;
     if resp.status().as_u16() == 401 {
-        bail!("GitHub refused the token");
+        bail!(REFUSED);
     }
     let body = crate::plex::read_limited(resp, MAX_BODY).await?;
     let v: Value = serde_json::from_slice(&body).context("GitHub's reply isn't JSON")?;
@@ -247,6 +250,108 @@ pub fn token() -> Option<String> {
     secrets::system_store_for(secrets::GITHUB_TOKEN).get().ok().flatten().filter(|t| !t.trim().is_empty())
 }
 
+/// The "Sign in with GitHub" tokens, if signed in.
+pub fn app_tokens() -> Option<Tokens> {
+    secrets::system_store_for(secrets::GITHUB_OAUTH).get().ok().flatten().and_then(|s| ghauth::decode(&s))
+}
+
+const REFUSED: &str = "GitHub refused the token";
+
+/// Held while the stored sign-in is checked and changed (renewal, sign-in, sign-out), so
+/// one can't undo another.
+pub static AUTH_LOCK: Mutex<()> = Mutex::new(());
+
+/// A renewed pair that could not be saved: (the refresh token it replaced, the new pair).
+/// GitHub already dropped the old one, so this is the only valid copy until it is saved.
+static UNSAVED: Mutex<Option<(String, Tokens)>> = Mutex::new(None);
+
+/// The sign-in to use: a renewed pair not saved yet (saving it again now), else the stored one.
+fn signed_in_tokens() -> Option<Tokens> {
+    let _g = AUTH_LOCK.lock().ok()?;
+    let stored = app_tokens();
+    let mut unsaved = UNSAVED.lock().ok()?;
+    match (stored, unsaved.take()) {
+        (Some(cur), Some((old, t))) if cur.refresh == old => {
+            let store = secrets::system_store_for(secrets::GITHUB_OAUTH);
+            if let Err(e) = secrets::store_verified(store.as_ref(), &ghauth::encode(&t)) {
+                log::warn!("github: saving the renewed sign-in failed again: {e:#}");
+                *unsaved = Some((old, t.clone()));
+            }
+            Some(t)
+        }
+        // Signed out or in again meanwhile: the unsaved pair is stale.
+        (stored, _) => stored,
+    }
+}
+
+/// The sign-in ran out (refresh token refused); cleared by the next sign-in.
+static LOST: AtomicBool = AtomicBool::new(false);
+pub const LOST_MESSAGE: &str = "The GitHub sign-in ran out. Sign in again.";
+
+pub fn sign_in_lost() -> bool {
+    LOST.load(Ordering::Relaxed)
+}
+
+/// A sign-in or sign-out happened: forget the old state and ask again now.
+pub fn auth_changed() {
+    LOST.store(false, Ordering::Relaxed);
+    WAKE.notify_one();
+}
+
+fn now() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+/// Renews the sign-in and keeps the new pair, unless the user signed out or in again
+/// meanwhile (then the stored tokens are no longer `old`).
+async fn renew(client: &reqwest::Client, old: &Tokens) -> Result<Tokens> {
+    let result = ghauth::refresh(client, ghauth::BASE, ghauth::CLIENT_ID, &old.refresh, now()).await;
+    keep_renewed(old, result)
+}
+
+/// Saves the outcome of a renewal under the lock (no await while it is held).
+fn keep_renewed(old: &Tokens, result: Result<Tokens, RefreshError>) -> Result<Tokens> {
+    let store = secrets::system_store_for(secrets::GITHUB_OAUTH);
+    let _g = AUTH_LOCK.lock().map_err(|_| anyhow::anyhow!("sign-in lock poisoned"))?;
+    let still_ours = app_tokens().is_some_and(|cur| cur.refresh == old.refresh);
+    match result {
+        Ok(t) => {
+            if !still_ours {
+                bail!("the GitHub sign-in changed meanwhile");
+            }
+            if let Err(e) = secrets::store_verified(store.as_ref(), &ghauth::encode(&t)) {
+                log::warn!("github: saving the renewed sign-in failed, keeping it in memory: {e:#}");
+                if let Ok(mut u) = UNSAVED.lock() {
+                    *u = Some((old.refresh.clone(), t.clone()));
+                }
+            }
+            Ok(t)
+        }
+        Err(RefreshError::SignIn(m)) => {
+            if still_ours {
+                let _ = store.delete();
+                LOST.store(true, Ordering::Relaxed);
+            }
+            bail!(m)
+        }
+        Err(RefreshError::Other(m)) => bail!(m),
+    }
+}
+
+/// Fetch with the sign-in: renew 5 minutes before it runs out, or once after a 401.
+async fn fetch_signed_in(client: &reqwest::Client, mut t: Tokens) -> Result<Contributions> {
+    if t.expiring(now(), 300) {
+        t = renew(client, &t).await?;
+    }
+    match fetch(client, &t.access).await {
+        Err(e) if e.to_string() == REFUSED => {
+            let t = renew(client, &t).await?;
+            fetch(client, &t.access).await
+        }
+        r => r,
+    }
+}
+
 pub async fn run(ctx: Ctx) {
     let client = match reqwest::Client::builder().timeout(TIMEOUT).user_agent("deskhub").build() {
         Ok(c) => c,
@@ -257,12 +362,18 @@ pub async fn run(ctx: Ctx) {
     };
     let mut last: Option<Value> = None;
     loop {
-        let wait = match token() {
+        let got = match (signed_in_tokens(), token()) {
+            (Some(t), _) => Some(fetch_signed_in(&client, t).await),
+            (None, Some(pat)) => Some(fetch(&client, pat.trim()).await),
+            (None, None) => None,
+        };
+        let wait = match got {
             None => {
-                set_status(None);
+                let lost = sign_in_lost().then(|| GithubStatus { error: LOST_MESSAGE.into(), ..Default::default() });
+                set_status(lost);
                 None
             }
-            Some(t) => match fetch(&client, t.trim()).await {
+            Some(got) => match got {
                 Ok(c) => {
                     let msg = message(&c);
                     set_status(Some(GithubStatus { ok: true, error: String::new(), login: c.login.clone(), total: c.total }));
