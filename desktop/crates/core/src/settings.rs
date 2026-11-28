@@ -423,7 +423,7 @@ impl Default for Pages {
     fn default() -> Self {
         Self {
             enabled: DEFAULT_PAGES.iter().map(|p| p.to_string()).collect(),
-            nav: Nav::Left,
+            nav: Nav::Bottom,
         }
     }
 }
@@ -579,9 +579,10 @@ impl PcSleep {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Nav {
-    #[default]
     Left,
     Right,
+    /// The default: a bar along the bottom, pages use the full width.
+    #[default]
     Bottom,
 }
 
@@ -819,7 +820,8 @@ pub fn import_config_toml(text: &str) -> Result<Settings> {
     s.pages.nav = pages_sec
         .and_then(|p| text_at(p, "nav"))
         .and_then(|v| Nav::parse(&v))
-        .unwrap_or_default();
+        // The companion's default was the left sidebar: an imported board keeps its look.
+        .unwrap_or(Nav::Left);
 
     if let Some(a) = section(&cfg, "ai") {
         if let Some(agent) = text_at(a, "agent") {
@@ -1085,7 +1087,7 @@ mod tests {
         );
         assert_eq!(v["display"]["pc_sleep"], "off");
         assert_eq!(v["display"]["night_style"], "off");
-        assert_eq!(v["pages"]["nav"], "left");
+        assert_eq!(v["pages"]["nav"], "bottom");
         assert_eq!(v["appearance"]["theme"], "midnight");
     }
 

@@ -203,7 +203,7 @@ const clone = <T>(v: T): T => structuredClone(v);
 const mock: Settings = {
   board: { host: "deskhub.local", token: "" },
   display: { brightness: 100, night_brightness: 0, night: "", night_style: "off", pc_sleep: "off", clock_seconds: false, chart_hours: 24 },
-  pages: { enabled: ["home", "stats", "ai", "weather", "media", "shortcuts", "timer", "network"], nav: "left" },
+  pages: { enabled: ["home", "stats", "ai", "weather", "media", "shortcuts", "timer", "network"], nav: "bottom" },
   home: {
     header: true,
     grid: [
