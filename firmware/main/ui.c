@@ -62,7 +62,7 @@ static lv_obj_t *s_nav[PAGE_COUNT];
 static lv_obj_t *s_wifi_icon, *s_pc_icon;
 static void wifi_icon_cb(lv_event_t *e);
 static lv_obj_t *s_nav_logo;   // the AI tab's agent logo
-int g_nav = NAV_LEFT;
+int g_nav = NAV_BOTTOM;
 
 #define THEME_VERSION 1
 static const hub_theme_t k_theme_default = {

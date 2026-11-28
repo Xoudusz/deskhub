@@ -63,7 +63,7 @@ The pictures come from the board's own UI running in the simulator with made-up 
 | 3D printer | Print state, progress, temperatures and filament colours for up to 4 printers: Bambu Lab, Klipper, Prusa, OctoPrint, Flashforge, Elegoo, Snapmaker, Anycubic (optional) | companion only, over the local network (Bambu also through its cloud) |
 | Games | The Steam game you're playing with its cover and session time, your five most recent games, and a tap to launch one (optional) | desktop app, from Steam's local files |
 | Stats: Internet view | Online status, latency, jitter and packet loss with a latency chart (last 24 hours by default), uptime and the last drop, data used today and this month, and an on-demand speed test | desktop app (Settings > Connection > Internet) |
-| Timer | Countdown with presets from 1 to 45 minutes, pause and reset, and a full-screen "Time's up" card. The time left shows on its sidebar tab | the board itself, works without the PC |
+| Timer | Countdown with presets from 1 to 45 minutes, pause and reset, and a full-screen "Time's up" card. The time left shows on its tab in the navigation bar | the board itself, works without the PC |
 | GitHub | Your contribution chart for the whole year with month and weekday labels, contributions by kind, your current and longest streak and best day, this week against last week day by day, and your top repositories by commits; plus a Home widget (optional) | desktop app (Settings > Calendar & GitHub), from GitHub's API with your token |
 
 Home is a 5 × 3 grid you arrange yourself, with widgets in the sizes you choose ([Customizing Home](#customizing-home)). Beyond the pages:
@@ -140,7 +140,7 @@ It asks these questions in order. When you run it again, each answer you gave be
 5. **3D printers**: whether to add or change 3D printers. See [3D printer](#3d-printer).
 6. **Games**: whether to add games that aren't on Steam, such as Minecraft. See [Games that aren't on Steam](#games-that-arent-on-steam).
 7. **Shortcuts**: whether to add, change, move or remove the buttons on the Shortcuts page. See [Shortcuts](#shortcuts).
-8. **Pages**: a yes/no for each page, to choose which ones the sidebar shows (Home is always shown), then where the navigation bar goes: `left`, `right` or `bottom`. Moving it restarts the board once so every page is laid out for the new space; with the bar along the bottom, pages use a slightly more compact layout.
+8. **Pages**: a yes/no for each page, to choose which ones the navigation bar shows (Home is always shown), then where the navigation bar goes: `left`, `right` or `bottom`. Moving it restarts the board once so every page is laid out for the new space; with the bar along the bottom, pages use a slightly more compact layout.
 9. **Home screen**: whether the time and date go in a slim top bar, then whether to keep the current layout. To change it, add widgets one at a time with a size each; `undo` takes the last one off and `clear` starts over. See [Customizing Home](#customizing-home).
 10. **Screen sleep and night mode**: whether the board goes dark (`off`), shows a dim clock (`clock`) or stays as it is (`none`) while the PC's screen sleeps, then night-mode hours such as `23:00-07:00` (or `off`) and what it shows at night. See [When the PC sleeps](#when-the-pc-sleeps).
 11. **Internet**: how often to run a speed test (`0`, the default, runs one only when you tap the button) and whether to show your public IP. See [Internet](#internet).
@@ -218,7 +218,7 @@ If a new firmware can't start properly, the board goes back to the previous one 
 uv run python -m deskhub
 ```
 
-Within a few seconds the monitor icon near the bottom of the board's sidebar, just above the Wi-Fi icon, turns green. The stats, media and calendar pages then fill in. Leave this window open while you use the board, and run other commands such as `uv run deskhub-calendars` in a second terminal. To have it start by itself instead, hidden in the background, see [Start the companion with Windows](#start-the-companion-with-windows).
+Within a few seconds the monitor icon next to the Wi-Fi icon in the board's navigation bar turns green. The stats, media and calendar pages then fill in. Leave this window open while you use the board, and run other commands such as `uv run deskhub-calendars` in a second terminal. To have it start by itself instead, hidden in the background, see [Start the companion with Windows](#start-the-companion-with-windows).
 
 Options: `--config <path>` uses another config file, `--tray` shows the notification-area icon, `--log <path>` writes a log file, and `-v` logs more detail.
 
@@ -301,7 +301,7 @@ That opens a menu to list, add and remove calendars. Restart the companion after
 
 The companion checks for new events every 10 minutes.
 
-When Home doesn't show the *Up next* widget, a small dot on the sidebar's Calendar tab tells you there's still an event today. It takes the colour of that event's calendar (the first one the Calendar page lists) and goes away once the day's last event ends.
+When Home doesn't show the *Up next* widget, a small dot on the Calendar tab tells you there's still an event today. It takes the colour of that event's calendar (the first one the Calendar page lists) and goes away once the day's last event ends.
 
 ## Choosing pages
 

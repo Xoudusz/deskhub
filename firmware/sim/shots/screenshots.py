@@ -144,7 +144,7 @@ def frames():
     out = [
         j({"type": "location", "city": "Vienna", "lat": "48.2082", "lon": "16.3738",
            "tz": "CET-1CEST,M3.5.0,M10.5.0/3", "fahrenheit": False, "h24": True}),
-        j({"type": "layout", "pages": PAGES, "ordered": True, "nav": "left", "seconds": False}),
+        j({"type": "layout", "pages": PAGES, "ordered": True, "nav": "bottom", "seconds": False}),
         j({"type": "home", "header": True, "grid": [
             {"widget": "claude", "x": 0, "y": 0, "w": 3, "h": 1},
             {"widget": "events", "x": 0, "y": 1, "w": 3, "h": 2},
@@ -205,20 +205,22 @@ def frames():
            "friends": [{"name": "pixelfox", "game": "Neon Drift"}, {"name": "mara_k", "game": "Tidecaller"},
                        {"name": "Benedikt", "game": ""}]}),
         j({"type": "net", "online": True, "latency_ms": 11.4, "jitter_ms": 1.8, "loss_pct": 0,
-           "hist": [10 + (i * 7) % 6 + (25 if i in (61, 62) else 0) for i in range(90)],
+           "hist": [10 + (i * 7) % 6 + (25 if i in (101, 102) else 0) for i in range(144)],
+           "hist_label": "LAST 24 HOURS",
            "up_since": NOW - 3 * 86400 - 7200, "last_drop": {"at": NOW - 3 * 86400 - 7200, "dur_s": 42},
            "today_bytes": 6.3e9, "month_bytes": 412e9,
            "speed": {"down_mbps": 482.6, "up_mbps": 51.3, "ping_ms": 9.7, "at": NOW - 5400},
            "testing": False, "ip": "203.0.113.42"}),
         j(github()),
     ]
-    # A minute of PC stats (one message a second), so the chart has a history.
-    for i in range(60):
-        out.append(j({"type": "stats", "cpu": int(18 + 10 * math.sin(i / 6) + (i % 5)),
-                      "cpu_temp": 54, "gpu": int(38 + 14 * math.sin(i / 9 + 1)), "gpu_temp": 49,
-                      "ram_used": 14.6, "ram_total": 32, "vram_used": 5.2, "vram_total": 16,
-                      "net_down": int(9000 + 7000 * math.sin(i / 4)), "net_up": 420, "disk": 61,
-                      "cpu_name": "Ryzen 7 7800X3D", "gpu_name": "Radeon RX 7900 XT"}))
+    # PC stats with a saved 24 h history (144 points of 10 minutes, as the app sends it).
+    out.append(j({"type": "stats", "cpu": 23, "cpu_temp": 54, "gpu": 41, "gpu_temp": 49,
+                  "ram_used": 14.6, "ram_total": 32, "vram_used": 5.2, "vram_total": 16,
+                  "net_down": 9000, "net_up": 420, "disk": 61,
+                  "cpu_name": "Ryzen 7 7800X3D", "gpu_name": "Radeon RX 7900 XT",
+                  "cpu_hist": [int(12 + 30 * max(0, math.sin((i - 40) / 25)) + 6 * math.sin(i / 3)) for i in range(144)],
+                  "gpu_hist": [int(8 + 55 * max(0, math.sin((i - 90) / 12))) for i in range(144)],
+                  "hist_label": "LAST 24 HOURS"}))
     # Header and thumbnail: the game being played (one slot each); portraits: recent games.
     appid, _, c1, c2 = games[0]
     out.append(steam_art(appid, 0, art(340, 159, c1, c2, 0)))

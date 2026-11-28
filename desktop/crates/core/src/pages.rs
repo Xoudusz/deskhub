@@ -396,7 +396,7 @@ mod tests {
                 "type": "layout",
                 "pages": ["home", "stats", "ai", "calendar", "weather", "media", "timer", "network", "shortcuts"],
                 "ordered": true,
-                "nav": "left",
+                "nav": "bottom",
                 "pc_sleep": "off",
                 "night_start": -1,
                 "night_end": -1,
